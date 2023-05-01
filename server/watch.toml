@@ -1,0 +1,18 @@
+# Watch tasks
+[[watch]]
+# Name of the task
+name = "Big Iron watcher"
+
+# Which command to execute
+command = "cargo run --bin server"
+
+# Which paths to watch for changes
+paths = [
+  "./src",
+  "./models"
+  "./Cargo.toml",
+]
+
+# Which extensions to watch for changes
+# Here we're watching for changes to Rust source code files
+extensions = ["rs", "R"]

@@ -1,0 +1,10 @@
+/server/config.toml
+/server/target
+/server/static
+/server/database.sqlite
+/server/database.sqlite-journal
+/server/renv
+/server/models/prediction_model.rds
+/app/config.toml
+/app/target
+/app/dist
