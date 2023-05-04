@@ -11,6 +11,7 @@ mod rlang_runner;
 // mod plot;
 
 use meshetar::Meshetar;
+use meshetar::Summary;
 // Dependencies
 //
 use rocket::catch;
@@ -23,6 +24,7 @@ use rocket::Request;
 // Logging
 use env_logger::{Builder, Env};
 use log::LevelFilter;
+use tokio::runtime::Runtime;
 
 fn main() {
     // Set log level for libs that are too noisy
@@ -30,16 +32,32 @@ fn main() {
     let mut builder = Builder::from_env(Env::default().default_filter_or("info"));
     builder.filter_module("sqlx", LevelFilter::Off).init();
 
-    // Create
-    let meshetar = Meshetar::start();
-    // Init R libs and start the program
+    // Create runtime
     //
+    let runtime = Runtime::new().unwrap();
+    let meshetar = runtime.block_on(async { Meshetar::initialize().await });
+    match meshetar {
+        Ok(meshetar) => {
+            println!("{:?}", meshetar.summerize());
+            let meshetar = runtime.block_on(async { meshetar.start_server().await });
+            match meshetar {
+                Ok(meshetar) => {
+                    println!("{:?}", meshetar.summerize());
+                }
+                Err(meshetar) => {
+                    println!("{:?}", meshetar.summerize());
+                }
+            }
+        }
+        Err(meshetar) => {
+            println!("{:?}", meshetar.summerize())
+        }
+    }
 }
 
-// Rocket
-//
-// needs to in the root crate
-
+// Rocket server
+// macro needs to in the root crate
+// ...
 #[macro_use]
 extern crate rocket;
 
