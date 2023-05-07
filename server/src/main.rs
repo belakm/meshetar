@@ -11,7 +11,6 @@ mod rlang_runner;
 // mod plot;
 
 use meshetar::Meshetar;
-use meshetar::Summary;
 // Dependencies
 //
 use rocket::catch;
@@ -26,31 +25,44 @@ use env_logger::{Builder, Env};
 use log::LevelFilter;
 use tokio::runtime::Runtime;
 
+use crate::meshetar::Summary;
+
 fn main() {
     // Set log level for libs that are too noisy
     //
     let mut builder = Builder::from_env(Env::default().default_filter_or("info"));
-    builder.filter_module("sqlx", LevelFilter::Off).init();
+    builder
+        .filter_module("sqlx", LevelFilter::Warn)
+        .filter_module("rocket", LevelFilter::Warn)
+        .init();
 
     // Create runtime
     //
     let runtime = Runtime::new().unwrap();
-    let meshetar = runtime.block_on(async { Meshetar::initialize().await });
-    match meshetar {
-        Ok(meshetar) => {
-            println!("{:?}", meshetar.summerize());
-            let meshetar = runtime.block_on(async { meshetar.start_server().await });
+    let meshetar = Meshetar::new();
+    let meshetar = runtime.block_on(async { meshetar.initialize().await });
+    runtime.block_on(async {
+        // Go into runtime
+        //
+        tokio::spawn(async {
             match meshetar {
-                Ok(meshetar) => {
-                    println!("{:?}", meshetar.summerize());
-                }
+                Ok(meshetar) => {}
                 Err(meshetar) => {
-                    println!("{:?}", meshetar.summerize());
+                    println!("FAIL {:?}", meshetar.summerize())
                 }
             }
-        }
-        Err(meshetar) => {
-            println!("{:?}", meshetar.summerize())
+        });
+    });
+    ignite_rocket();
+}
+
+fn ignite_rocket() -> Result<(), String> {
+    match start_rocket() {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            println!("ROCKET ERROR - {:?}", e);
+            println!("RESTARTING SERVER");
+            ignite_rocket()
         }
     }
 }

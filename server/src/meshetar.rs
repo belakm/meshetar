@@ -1,14 +1,12 @@
 use std::marker::PhantomData;
 
-use tokio::runtime::Runtime;
-
 use crate::rlang_runner::r_script;
 
 // Valid states
 //
-pub struct IdleNoServer;
-pub struct Idle;
+pub struct New;
 pub struct Initialization;
+pub struct Idle;
 pub struct Running;
 pub struct CriticalError;
 
@@ -43,33 +41,17 @@ impl<T> Summary for Meshetar<T> {
 
 // State implementations
 //
-impl Meshetar<Idle> {}
-impl Meshetar<IdleNoServer> {
-    pub async fn start_server(self) -> Result<Meshetar<Idle>, Meshetar<IdleNoServer>> {
-        let mut message_log = self.message_log.clone();
-        match crate::start_rocket() {
-            Ok(_) => Ok(Meshetar::<Idle> {
-                message_log: {
-                    message_log.push("Started rocket server.".into());
-                    message_log
-                },
-                selected_pair: Pair::from(self.selected_pair),
-                state: PhantomData,
-            }),
-            Err(e) => Err(Self {
-                message_log: {
-                    message_log.push(format!("Error starting Rocket server: {:?}", e).into());
-                    message_log
-                },
-                selected_pair: Pair::from(self.selected_pair),
-                state: PhantomData,
-            }),
+impl Meshetar<New> {
+    pub fn new() -> Meshetar<Initialization> {
+        Meshetar::<Initialization> {
+            message_log: Vec::new(),
+            selected_pair: Pair::USDTBTC,
+            state: PhantomData,
         }
     }
 }
-impl Meshetar<CriticalError> {}
 impl Meshetar<Initialization> {
-    pub async fn initialize() -> Result<Meshetar<IdleNoServer>, Meshetar<CriticalError>> {
+    pub async fn initialize(self) -> Result<Meshetar<Idle>, Meshetar<CriticalError>> {
         // Create new log
         let mut message_log: Vec<String> = Vec::new();
         message_log.push("Starting initialization.".into());
@@ -79,26 +61,14 @@ impl Meshetar<Initialization> {
         match r_script("renv_install.R", None) {
             // Initialize our database
             //
-            Ok(_) => match crate::database::initialize().await {
-                // Ready to rumble
-                //
-                Ok(_) => Ok(Meshetar::<IdleNoServer> {
-                    selected_pair: Pair::USDTBTC,
-                    message_log: {
-                        message_log.push("Database Inititiated".to_string());
-                        message_log
-                    },
-                    state: PhantomData,
-                }),
-                Err(e) => Err(Meshetar::<CriticalError> {
-                    selected_pair: Pair::USDTBTC,
-                    message_log: {
-                        message_log.push(e);
-                        message_log
-                    },
-                    state: PhantomData,
-                }),
-            },
+            Ok(_) => Ok(Meshetar::<Idle> {
+                selected_pair: Pair::USDTBTC,
+                message_log: {
+                    message_log.push("Database Inititiated".to_string());
+                    message_log
+                },
+                state: PhantomData,
+            }),
             Err(e) => Err(Meshetar::<CriticalError> {
                 selected_pair: Pair::USDTBTC,
                 message_log: {
@@ -110,5 +80,6 @@ impl Meshetar<Initialization> {
         }
     }
 }
-
+impl Meshetar<Idle> {}
+impl Meshetar<CriticalError> {}
 impl Meshetar<Running> {}
