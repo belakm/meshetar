@@ -1,20 +1,19 @@
 use crate::{
-    database::DB_POOL,
-    formatting::timestamp_to_string,
-    load_config::{read_config, Config},
+    binance_client::BINANCE_CLIENT, database::DB_POOL, formatting::timestamp_to_string,
     prediction_model,
 };
 use binance_spot_connector_rust::{
-    http::Credentials,
     hyper::BinanceHttpClient,
     market::{self, klines::KlineInterval},
     market_stream::kline::KlineStream,
     tungstenite::BinanceWebSocketClient,
 };
+use hyper::client::HttpConnector;
+use hyper_tls::HttpsConnector;
 use rocket::futures::TryFutureExt;
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::time::sleep;
 
 #[derive(Debug, Deserialize)]
@@ -121,12 +120,6 @@ async fn subscribe_to_price_updates() {
     conn.close().expect("Failed to disconnect");
 }
 
-async fn update() {
-    loop {
-        sleep(Duration::from_secs(10)).await;
-    }
-}
-
 async fn insert_kline_to_database(connection: &Pool<Sqlite>, kline: Kline) -> Result<(), String> {
     sqlx::query(
         r#"
@@ -150,37 +143,30 @@ async fn insert_kline_to_database(connection: &Pool<Sqlite>, kline: Kline) -> Re
     Ok(())
 }
 
-pub async fn fetch_history(symbol: &str) -> Result<(), String> {
-    println!("Fetching {} history.", symbol);
-    let config: Config = read_config();
-    let credentials = Credentials::from_hmac(
-        config.binance_api_key.to_owned(),
-        config.binance_api_secret.to_owned(),
-    );
+pub async fn fetch_history(symbol: String) -> Result<(), String> {
+    log::info!("Fetching {} history.", symbol);
     let mut klines: Vec<Kline> = Vec::new();
-    let mut start_time: i64 = 0;
-    let client = BinanceHttpClient::default().credentials(credentials);
+    let mut start_time: i64 = 1683843793488;
+    let client = BINANCE_CLIENT.get().unwrap();
     loop {
-        if start_time > 1503055199000 {
-            break;
-        }
-        println!(
+        log::info!(
             "Loading candles from: {:?}",
             timestamp_to_string(start_time)
         );
-        let request = market::klines(symbol, KlineInterval::Minutes1)
+        let request = market::klines(&symbol, KlineInterval::Minutes1)
             .start_time(start_time as u64)
             .limit(1000);
-
-        let data = client
-            .send(request)
-            .map_err(|_| "Error sending binance request.")
-            .await?;
-
-        let data = data
-            .into_body_str()
-            .map_err(|_| "Failed parsing binance data.")
-            .await?;
+        let mut res = String::new();
+        {
+            let data = client
+                .send(request)
+                .map_err(|e| format!("Error sending binance request. {:?}", e))
+                .await?;
+            res = data
+                .into_body_str()
+                .map_err(|e| format!("Failed parsing binance data. {:?}", e))
+                .await?;
+        };
 
         let data: Vec<(
             i64,
@@ -195,7 +181,7 @@ pub async fn fetch_history(symbol: &str) -> Result<(), String> {
             String,
             String,
             String,
-        )> = serde_json::from_str(&data).unwrap();
+        )> = serde_json::from_str(&res).unwrap();
         let mut new_klines: Vec<Kline> = Vec::new();
         for inner_array in data {
             let kline = Kline {
@@ -227,9 +213,11 @@ pub async fn fetch_history(symbol: &str) -> Result<(), String> {
         };
         sleep(Duration::from_secs(1)).await;
     }
+    log::info!("No klines.");
     if klines.is_empty() {
         Err(String::from("No history klines inserted."))
     } else {
+        log::info!("Starting instertion of klines.");
         let connection = DB_POOL.get().unwrap();
         for kline in klines {
             match insert_kline_to_database(connection, kline).await {
@@ -241,12 +229,4 @@ pub async fn fetch_history(symbol: &str) -> Result<(), String> {
         }
         Ok(())
     }
-}
-
-pub async fn main() -> Result<(), String> {
-    println!("Starting book proccess.");
-    // start updating book records
-    tokio::spawn(update());
-    tokio::spawn(subscribe_to_price_updates());
-    Ok(())
 }

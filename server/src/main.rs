@@ -1,5 +1,6 @@
 // Main modules
 //
+mod binance_client;
 mod book;
 mod database;
 mod formatting;
@@ -11,6 +12,8 @@ mod rlang_runner;
 // mod plot;
 
 use meshetar::Meshetar;
+use rocket::State;
+use std::sync::Arc;
 // Dependencies
 //
 use rocket::catch;
@@ -18,54 +21,9 @@ use rocket::fs::FileServer;
 use rocket::fs::Options;
 use rocket::futures::TryFutureExt;
 use rocket::http::Status;
-use rocket::Request;
-
-// Logging
-use env_logger::{Builder, Env};
-use log::LevelFilter;
-use tokio::runtime::Runtime;
-
-use crate::meshetar::Summary;
-
-fn main() {
-    // Set log level for libs that are too noisy
-    //
-    let mut builder = Builder::from_env(Env::default().default_filter_or("info"));
-    builder
-        .filter_module("sqlx", LevelFilter::Warn)
-        .filter_module("rocket", LevelFilter::Warn)
-        .init();
-
-    // Create runtime
-    //
-    let runtime = Runtime::new().unwrap();
-    let meshetar = Meshetar::new();
-    let meshetar = runtime.block_on(async { meshetar.initialize().await });
-    runtime.block_on(async {
-        // Go into runtime
-        //
-        tokio::spawn(async {
-            match meshetar {
-                Ok(meshetar) => {}
-                Err(meshetar) => {
-                    println!("FAIL {:?}", meshetar.summerize())
-                }
-            }
-        });
-    });
-    ignite_rocket();
-}
-
-fn ignite_rocket() -> Result<(), String> {
-    match start_rocket() {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            println!("ROCKET ERROR - {:?}", e);
-            println!("RESTARTING SERVER");
-            ignite_rocket()
-        }
-    }
-}
+use rocket::request::Request;
+use rocket::response::status::Accepted;
+use tokio::sync::Mutex;
 
 // Rocket server
 // macro needs to in the root crate
@@ -89,9 +47,20 @@ fn default(status: Status, req: &Request) -> String {
 }
 
 #[rocket::main]
-async fn start_rocket() -> Result<(), String> {
-    println!("Igniting rocket.");
-    match rocket::build() // .mount("/", routes![api::account_balance_history])
+async fn main() -> Result<(), String> {
+    log::info!("Igniting rocket.");
+    binance_client::initialize().await?;
+    database::initialize().await?;
+    let meshetar = Arc::new(Mutex::new(Meshetar::new()));
+    match rocket::build()
+        .manage(meshetar)
+        .mount(
+            "/",
+            routes![
+                history_fetch,
+                meshetar_status /*, interval_put, pair_put*/
+            ],
+        )
         .mount("/", FileServer::new("static", Options::None).rank(1))
         .register("/", catchers![internal_error, not_found, default])
         .launch()
@@ -102,3 +71,39 @@ async fn start_rocket() -> Result<(), String> {
         Err(e) => Err(e),
     }
 }
+
+#[post("/history_fetch")]
+async fn history_fetch(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<String> {
+    tokio::join!(async {
+        let mut m = meshetar.lock().await; // Change the field in Meshetar
+        m.status = meshetar::Status::FetchingHistory;
+        let pair = m.pair.to_str();
+        match book::fetch_history(pair).await {
+            Ok(_) => log::info!("History fetching success."),
+            Err(e) => log::info!("History fetching err: {:?}", e),
+        };
+        m.status = meshetar::Status::Idle;
+    });
+    Accepted(Some(meshetar.lock().await.summerize()))
+}
+
+#[get("/status")]
+async fn meshetar_status(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<String> {
+    let meshetar = meshetar.lock().await;
+    Accepted(Some(meshetar.summerize()))
+}
+
+/*
+#[put("/interval")]
+fn interval_put(meshetar: &State<Mutex<Meshetar>>) -> status::Accepted<String> {
+    let mut meshetar = meshetar.lock().unwrap();
+    meshetar.interval = Interval::Minutes3;
+    status::Accepted(Some(meshetar.summerize()))
+}
+
+#[put("/pair")]
+fn pair_put(meshetar: &State<Mutex<Meshetar>>) -> status::Accepted<String> {
+    let mut meshetar = meshetar.lock().unwrap();
+    meshetar.interval = Interval::Minutes3;
+    status::Accepted(Some(meshetar.summerize()))
+}*/
