@@ -1,24 +1,35 @@
-mod store;
-mod store_models;
-
-use chrono::prelude::*;
+// mod store;
+// mod store_models;
 use gloo_timers::future::TimeoutFuture;
-use store::Store;
+// use store::Store;
 use sycamore::futures::spawn_local_scoped;
 use sycamore::prelude::*;
 
+async fn get_status() -> Result<String, Box<dyn std::error::Error>> {
+    let resp: String = reqwest::get("http://localhost:8000/status")
+        .await?
+        .text()
+        .await?;
+    Ok(resp)
+}
+
 fn main() {
     sycamore::render(|cx| {
-        let store = Store::new();
-        let store: &Signal<Store> = create_signal(cx, store);
-        /*
-         * spawn_local_scoped(cx, async move {
+        let store = String::new();
+        let store: &Signal<String> = create_signal(cx, store);
+        spawn_local_scoped(cx, async move {
             loop {
-                let utc: String = Utc::now().format("%d. %m %Y %H:%M:%S").to_string();
-                TimeoutFuture::new(10000).await;
-                state.set(utc);
+                let status = get_status().await;
+                match status {
+                    Ok(s) => {
+                        store.set(s);
+                        println!("{:?}", store.get())
+                    }
+                    _ => (),
+                }
+                TimeoutFuture::new(3000).await;
             }
-        });*/
+        });
         view! { cx,
             App(store=store)
         }
@@ -27,13 +38,13 @@ fn main() {
 
 #[derive(Prop)]
 struct AppProps<'a> {
-    store: &'a ReadSignal<Store>,
+    store: &'a ReadSignal<String>,
 }
 
 #[component]
 fn App<'a, G: Html>(cx: Scope<'a>, props: AppProps<'a>) -> View<G> {
     let store = props.store.get();
-    store.
+    println!("{:?}", store);
     view! {cx,
         header(class="container") {
             h1 {
@@ -49,7 +60,7 @@ fn App<'a, G: Html>(cx: Scope<'a>, props: AppProps<'a>) -> View<G> {
                     "Status"
                 }
                 p {
-                    "Server: " + store
+                   (store)
                 }
             }
             article {

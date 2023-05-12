@@ -1434,6 +1434,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 
 [[package]]
+name = "meshetar_server"
+version = "0.2.0"
+dependencies = [
+ "binance_spot_connector_rust",
+ "chrono",
+ "env_logger",
+ "hyper",
+ "hyper-tls",
+ "lazy_static",
+ "log",
+ "plotters",
+ "rocket",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "toml 0.7.3",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2478,26 +2498,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0efd8caf556a6cebd3b285caf480045fcc1ac04f6bd786b09a6f11af30c4fcf4"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "server"
-version = "0.1.0"
-dependencies = [
- "binance_spot_connector_rust",
- "chrono",
- "env_logger",
- "hyper",
- "hyper-tls",
- "lazy_static",
- "log",
- "plotters",
- "rocket",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "toml 0.7.3",
 ]
 
 [[package]]
