@@ -11,8 +11,13 @@ mod rlang_runner;
 // mod api;
 // mod plot;
 
+use meshetar::Interval;
 use meshetar::Meshetar;
+use meshetar::Pair;
+use rocket::form::Form;
+use rocket::serde::json::Json;
 use rocket::State;
+use serde::Deserialize;
 use std::sync::Arc;
 // Dependencies
 //
@@ -56,10 +61,7 @@ async fn main() -> Result<(), String> {
         .manage(meshetar)
         .mount(
             "/",
-            routes![
-                history_fetch,
-                meshetar_status /*, interval_put, pair_put*/
-            ],
+            routes![history_fetch, meshetar_status, interval_put, pair_put],
         )
         .mount("/", FileServer::new("static", Options::None).rank(1))
         .register("/", catchers![internal_error, not_found, default])
@@ -93,17 +95,54 @@ async fn meshetar_status(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Str
     Accepted(Some(meshetar.summerize()))
 }
 
-/*
-#[put("/interval")]
-fn interval_put(meshetar: &State<Mutex<Meshetar>>) -> status::Accepted<String> {
-    let mut meshetar = meshetar.lock().unwrap();
-    meshetar.interval = Interval::Minutes3;
-    status::Accepted(Some(meshetar.summerize()))
+#[derive(FromForm, Deserialize)]
+struct IntervalPutPayload<'r> {
+    interval: &'r str,
+}
+#[put("/interval", data = "<data>")]
+async fn interval_put(
+    meshetar: &State<Arc<Mutex<Meshetar>>>,
+    data: Form<IntervalPutPayload<'_>>,
+) -> Accepted<String> {
+    let mut meshetar = meshetar.lock().await;
+    match meshetar.status {
+        meshetar::Status::Idle => match data.interval {
+            "Minutes3" => {
+                meshetar.interval = Interval::Minutes3;
+                Accepted(Some(meshetar.summerize()))
+            }
+            "Minutes1" => {
+                meshetar.interval = Interval::Minutes1;
+                Accepted(Some(meshetar.summerize()))
+            }
+            _ => Accepted(Some(meshetar.summerize())),
+        },
+        _ => Accepted(Some("Currently working on something else.".to_string())),
+    }
 }
 
-#[put("/pair")]
-fn pair_put(meshetar: &State<Mutex<Meshetar>>) -> status::Accepted<String> {
-    let mut meshetar = meshetar.lock().unwrap();
-    meshetar.interval = Interval::Minutes3;
-    status::Accepted(Some(meshetar.summerize()))
-}*/
+#[derive(FromForm, Deserialize)]
+struct PairPutPayload<'r> {
+    pair: &'r str,
+}
+#[put("/pair", data = "<data>")]
+async fn pair_put(
+    meshetar: &State<Arc<Mutex<Meshetar>>>,
+    data: Form<PairPutPayload<'_>>,
+) -> Accepted<String> {
+    let mut meshetar = meshetar.lock().await;
+    match meshetar.status {
+        meshetar::Status::Idle => match data.pair {
+            "BTCUSDT" => {
+                meshetar.pair = Pair::BTCUSDT;
+                Accepted(Some(meshetar.summerize()))
+            }
+            "ETHBTC" => {
+                meshetar.pair = Pair::ETHBTC;
+                Accepted(Some(meshetar.summerize()))
+            }
+            _ => Accepted(Some(meshetar.summerize())),
+        },
+        _ => Accepted(Some("Currently working on something else.".to_string())),
+    }
+}
