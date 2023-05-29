@@ -1449,6 +1449,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "strum",
  "tokio",
  "toml 0.7.3",
 ]

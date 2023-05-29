@@ -1,5 +1,5 @@
-use crate::routes::{self, change_pair, get_status};
-use crate::store::Store;
+use crate::routes::{self, get_status};
+use crate::store::{self, Store};
 use crate::store_models::{Pair, Status};
 use gloo_timers::future::TimeoutFuture;
 use sycamore::futures::spawn_local_scoped;
@@ -14,18 +14,17 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
     let store = Store {
         message: create_rc_signal(String::from("")),
         mode: create_rc_signal(String::from("Idle")),
-        pair: create_rc_signal(String::from("USDTBTC")),
+        pair: create_rc_signal(String::from("BTCUSDT")),
         interval: create_rc_signal(String::from("Minutes1")),
         server_state: create_rc_signal(Status::Idle),
     };
     let store = provide_context(cx, store);
 
     // Listener for server state
-    create_effect(cx, || {
+    create_effect(cx, move || {
         let server_state = *store.server_state.get();
         match server_state {
             Status::Idle => is_running.set(false),
-            Status::Running => is_running.set(true),
             Status::FetchingHistory => is_running.set(true),
         }
     });
@@ -34,20 +33,24 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
         loop {
             let status = get_status().await;
             match status {
-                Ok(s) => store.message.set(s),
+                Ok(meshetar) => {
+                    store.server_state.set(meshetar.status);
+                    store.pair.set(meshetar.pair.to_string());
+                    store.interval.set(meshetar.interval.to_string());
+                    store.mode.set(meshetar.status.to_string());
+                }
                 _ => (),
             }
             TimeoutFuture::new(3000).await;
         }
     });
-    /*async fn change_pair_async(pair: Pair) -> () {
-        let res = change_pair(pair).await;
-    }
-    let change_pair = |e: Event| {
-        let pair: Pair = Pair::from(e.target().unwrap().unchecked_into::<Ht>().value(). e.target().unwrap());
-        let res = change_pair_async(Pair::from(e.target().unwrap().));
+    let change_pair = |_| {
+        let pair = store.pair.get();
+        //change_pair_async(pair);
     };
-    let change_operation = |e: Event| routes.change_operation();*/
+    async fn change_pair_async(pair: String) -> () {
+        //change_pair(pair).await;
+    }
     let start_operation = |_| {
         routes::start_operation();
     };
@@ -66,9 +69,9 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
         main(class="container") {
             article {
                 div {
-                    select(bind:value=store.pair) {
+                    select(bind:value=store.pair, on:change=change_pair) {
                         option {
-                            "USDTBTC"
+                            "BTCUSDT"
                         }
                         option {
                             "BTCETH"
@@ -84,10 +87,10 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                     }
                     select(bind:value=store.mode) {
                         option {
-                            "Fetch history"
+                            "Idle"
                         }
                         option {
-                            "Run simulation"
+                            "FetchingHistory"
                         }
                     }
                     div(class="grid") {

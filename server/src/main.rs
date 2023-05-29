@@ -15,6 +15,7 @@ use meshetar::Interval;
 use meshetar::Meshetar;
 use meshetar::Pair;
 use rocket::form::Form;
+use rocket::serde::json::Json;
 use rocket::State;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -104,7 +105,7 @@ async fn history_fetch(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Strin
     tokio::join!(async {
         let mut m = meshetar.lock().await; // Change the field in Meshetar
         m.status = meshetar::Status::FetchingHistory;
-        let pair = m.pair.to_str();
+        let pair = m.pair.to_string();
         match book::fetch_history(pair).await {
             Ok(_) => log::info!("History fetching success."),
             Err(e) => log::info!("History fetching err: {:?}", e),
@@ -115,9 +116,9 @@ async fn history_fetch(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Strin
 }
 
 #[get("/status")]
-async fn meshetar_status(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<String> {
+async fn meshetar_status(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Json<Meshetar>> {
     let meshetar = meshetar.lock().await;
-    Accepted(Some(meshetar.summerize()))
+    Accepted(Some(meshetar.summerize_json()))
 }
 
 #[derive(FromForm, Deserialize)]

@@ -1,34 +1,21 @@
 // Valid states
 //
-pub struct New;
-pub struct Initialization;
-pub struct Idle;
-pub struct Running;
-pub struct CriticalError;
 use rocket::serde::{json::Json, Serialize};
+use strum::Display;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize)]
 pub enum Status {
     Idle,
-    Running,
     FetchingHistory,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Display)]
 pub enum Pair {
     BTCUSDT,
     ETHBTC,
 }
-impl Pair {
-    pub fn to_str(&self) -> String {
-        match self {
-            Pair::BTCUSDT => "BTCUSDT".to_string(),
-            Pair::ETHBTC => "ETHBTC".to_string(),
-        }
-    }
-}
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize)]
 pub enum Interval {
     Minutes1,
     Minutes3,
@@ -36,7 +23,7 @@ pub enum Interval {
 
 // Core struct
 //
-#[derive(Serialize)]
+#[derive(Serialize, Copy, Clone)]
 #[serde(crate = "rocket::serde")]
 pub struct Meshetar {
     pub pair: Pair,
@@ -59,7 +46,7 @@ impl Meshetar {
         self.status = Status::Idle;
         self
     }
-    pub fn summerize_json(&self) -> Json<Meshetar> {
-        Json(*self)
+    pub fn summerize_json(self) -> Json<Meshetar> {
+        Json(self)
     }
 }
