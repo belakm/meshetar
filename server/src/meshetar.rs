@@ -5,6 +5,7 @@ pub struct Initialization;
 pub struct Idle;
 pub struct Running;
 pub struct CriticalError;
+use rocket::serde::{json::Json, Serialize};
 
 #[derive(Copy, Clone, Debug)]
 pub enum Status {
@@ -35,6 +36,8 @@ pub enum Interval {
 
 // Core struct
 //
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
 pub struct Meshetar {
     pub pair: Pair,
     pub interval: Interval,
@@ -55,5 +58,8 @@ impl Meshetar {
     pub fn go_to_idle(mut self) -> Self {
         self.status = Status::Idle;
         self
+    }
+    pub fn summerize_json(&self) -> Json<Meshetar> {
+        Json(*self)
     }
 }

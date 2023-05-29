@@ -39,6 +39,11 @@
   --switch-checked-background-color: var(--primary);
 }
 
+body > main {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 header {  
   display: flex;
   flex-direction: row;
@@ -50,7 +55,7 @@ header h1 {
 }
 
 .title-icon {
-  font-size: 1.5em;
+  font-size: 1em;
   padding: .1em;
   border-radius: 8%;
   background: var(--blockquote-border-color);
