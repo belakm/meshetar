@@ -9,6 +9,7 @@ pub struct Store {
     pub mode: RcSignal<String>,
     pub interval: RcSignal<String>,
     pub server_state: RcSignal<Status>,
+    pub last_kline_time: RcSignal<String>,
 }
 
 impl Store {

@@ -1,4 +1,7 @@
-use crate::store_models::{Interval, Meshetar, Pair, Status};
+use crate::{
+    store_models::{Interval, Meshetar, Pair, Status},
+    utils::console_log,
+};
 
 pub async fn get_status() -> Result<Meshetar, String> {
     let resp = reqwest::get("http://localhost:8000/status").await;
@@ -17,6 +20,17 @@ pub async fn get_status() -> Result<Meshetar, String> {
     }
 }
 
+pub async fn fetch_last_kline_time() -> Result<String, String> {
+    let resp = reqwest::get("http://localhost:8000/last_kline_time").await;
+    match resp {
+        Ok(resp) => match resp.text().await {
+            Ok(last_kline_time) => Ok(last_kline_time),
+            Err(e) => Err(e.to_string()),
+        },
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 pub async fn stop_operation() -> Result<Status, Box<dyn std::error::Error>> {
     Ok(Status::Idle)
 }
@@ -25,10 +39,48 @@ pub async fn start_operation() -> Result<Status, Box<dyn std::error::Error>> {
     Ok(Status::Idle)
 }
 
-pub async fn change_pair(pair: Pair) -> Result<Pair, Box<dyn std::error::Error>> {
-    Ok(Pair::ETHBTC)
+pub async fn change_pair(pair: Pair) -> Result<Pair, String> {
+    let params = [("pair", pair.to_string())];
+    let client = reqwest::Client::new();
+    let resp = client
+        .put("http://localhost:8000/pair")
+        .form(&params)
+        .send()
+        .await;
+    match resp {
+        Ok(resp) => match resp.text().await {
+            Ok(pair) => {
+                let pair = pair.parse::<Pair>();
+                match pair {
+                    Ok(pair) => Ok(pair),
+                    Err(e) => Err(e.to_string()),
+                }
+            }
+            Err(e) => Err(e.to_string()),
+        },
+        Err(e) => Err(e.to_string()),
+    }
 }
 
-pub async fn change_interval(interval: Interval) -> Result<Interval, Box<dyn std::error::Error>> {
-    Ok(Interval::Minutes1)
+pub async fn change_interval(interval: Interval) -> Result<Interval, String> {
+    let params = [("interval", interval.to_string())];
+    let client = reqwest::Client::new();
+    let resp = client
+        .put("http://localhost:8000/interval")
+        .form(&params)
+        .send()
+        .await;
+    match resp {
+        Ok(resp) => match resp.text().await {
+            Ok(interval) => {
+                let interval = interval.parse::<Interval>();
+                match interval {
+                    Ok(interval) => Ok(interval),
+                    Err(e) => Err(e.to_string()),
+                }
+            }
+            Err(e) => Err(e.to_string()),
+        },
+        Err(e) => Err(e.to_string()),
+    }
 }

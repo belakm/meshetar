@@ -11,6 +11,8 @@ mod rlang_runner;
 // mod api;
 // mod plot;
 
+use book::latest_kline_date;
+use hyper::server::accept::Accept;
 use meshetar::Interval;
 use meshetar::Meshetar;
 use meshetar::Pair;
@@ -38,7 +40,7 @@ pub struct CORS;
 impl Fairing for CORS {
     fn info(&self) -> Info {
         Info {
-            name: "Add CORS headers to responses",
+            name: "Cross-Origin-Resource-Sharing Fairing",
             kind: Kind::Response,
         }
     }
@@ -47,7 +49,7 @@ impl Fairing for CORS {
         response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
         response.set_header(Header::new(
             "Access-Control-Allow-Methods",
-            "POST, GET, PATCH, OPTIONS",
+            "POST, PATCH, PUT, DELETE, HEAD, OPTIONS, GET",
         ));
         response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
         response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
@@ -75,6 +77,13 @@ fn default(status: Status, req: &Request) -> String {
     format!("{} ({})", status, req.uri())
 }
 
+/// Catches all OPTION requests in order to get the CORS related Fairing triggered.
+/// https://stackoverflow.com/a/72702246
+#[options("/<_..>")]
+fn all_options() {
+    /* Intentionally left empty */
+}
+
 #[rocket::main]
 async fn main() -> Result<(), String> {
     log::info!("Igniting rocket.");
@@ -87,7 +96,14 @@ async fn main() -> Result<(), String> {
         .manage(meshetar)
         .mount(
             "/",
-            routes![history_fetch, meshetar_status, interval_put, pair_put],
+            routes![
+                history_fetch,
+                meshetar_status,
+                interval_put,
+                pair_put,
+                all_options,
+                last_kline_time
+            ],
         )
         .mount("/", FileServer::new("static", Options::None).rank(1))
         .register("/", catchers![internal_error, not_found, default])
@@ -121,6 +137,12 @@ async fn meshetar_status(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Jso
     Accepted(Some(meshetar.summerize_json()))
 }
 
+#[get("/last_kline_time")]
+async fn last_kline_time() -> Accepted<String> {
+    let last_kline_time = latest_kline_date().await.unwrap();
+    Accepted(Some(last_kline_time.to_string()))
+}
+
 #[derive(FromForm, Deserialize)]
 struct IntervalPutPayload<'r> {
     interval: &'r str,
@@ -135,13 +157,13 @@ async fn interval_put(
         meshetar::Status::Idle => match data.interval {
             "Minutes3" => {
                 meshetar.interval = Interval::Minutes3;
-                Accepted(Some(meshetar.summerize()))
+                Accepted(Some(meshetar.interval.to_string()))
             }
             "Minutes1" => {
                 meshetar.interval = Interval::Minutes1;
-                Accepted(Some(meshetar.summerize()))
+                Accepted(Some(meshetar.interval.to_string()))
             }
-            _ => Accepted(Some(meshetar.summerize())),
+            _ => Accepted(Some(meshetar.interval.to_string())),
         },
         _ => Accepted(Some("Currently working on something else.".to_string())),
     }
@@ -161,13 +183,13 @@ async fn pair_put(
         meshetar::Status::Idle => match data.pair {
             "BTCUSDT" => {
                 meshetar.pair = Pair::BTCUSDT;
-                Accepted(Some(meshetar.summerize()))
+                Accepted(Some(data.pair.to_string()))
             }
             "ETHBTC" => {
                 meshetar.pair = Pair::ETHBTC;
-                Accepted(Some(meshetar.summerize()))
+                Accepted(Some(data.pair.to_string()))
             }
-            _ => Accepted(Some(meshetar.summerize())),
+            _ => Accepted(Some(meshetar.pair.to_string())),
         },
         _ => Accepted(Some("Currently working on something else.".to_string())),
     }

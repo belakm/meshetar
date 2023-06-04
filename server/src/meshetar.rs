@@ -1,5 +1,3 @@
-// Valid states
-//
 use rocket::serde::{json::Json, Serialize};
 use strum::Display;
 
@@ -15,7 +13,7 @@ pub enum Pair {
     ETHBTC,
 }
 
-#[derive(Copy, Clone, Debug, Serialize)]
+#[derive(Copy, Clone, Debug, Serialize, Display)]
 pub enum Interval {
     Minutes1,
     Minutes3,

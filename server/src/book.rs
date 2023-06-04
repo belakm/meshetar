@@ -12,7 +12,7 @@ use hyper::client::HttpConnector;
 use hyper_tls::HttpsConnector;
 use rocket::futures::TryFutureExt;
 use serde::Deserialize;
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, Row, Sqlite};
 use std::{sync::Arc, time::Duration};
 use tokio::time::sleep;
 
@@ -141,6 +141,16 @@ async fn insert_kline_to_database(connection: &Pool<Sqlite>, kline: Kline) -> Re
     .bind(kline.taker_buy_quote_asset_volume)
     .execute(connection).map_err(|e| format!("Error inserting a kline into Database. {:?}", e)).await?;
     Ok(())
+}
+
+pub async fn latest_kline_date() -> Result<i64, String> {
+    let connection = DB_POOL.get().unwrap();
+    let row = sqlx::query("SELECT close_time FROM klines ORDER BY close_time DESC LIMIT 1")
+        .fetch_one(connection)
+        .map_err(|e| format!("Error fetching last kline. {:?}", e))
+        .await?;
+    let close_time: i64 = row.get("close_time");
+    Ok(close_time)
 }
 
 pub async fn fetch_history(symbol: String) -> Result<(), String> {
