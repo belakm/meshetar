@@ -1,22 +1,36 @@
-use rocket::serde::{json::Json, Serialize};
-use strum::Display;
+use std::sync::Arc;
 
-#[derive(Copy, Clone, Debug, Serialize)]
-pub enum Status {
+use binance_spot_connector_rust::market::klines::KlineInterval;
+use rocket::serde::{json::Json, Serialize};
+use strum::{Display, EnumString};
+use tokio::runtime::Handle;
+
+#[derive(Copy, Clone, Debug, Serialize, PartialEq)]
+pub enum MeshetarStatus {
     Idle,
+    Stopping,
     FetchingHistory,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Display)]
+#[derive(Copy, Clone, Debug, Serialize, Display, EnumString)]
 pub enum Pair {
     BTCUSDT,
     ETHBTC,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Display)]
+#[derive(Copy, Clone, Debug, Serialize, Display, EnumString)]
 pub enum Interval {
     Minutes1,
     Minutes3,
+}
+
+impl Interval {
+    pub fn to_kline_interval(&self) -> KlineInterval {
+        match self {
+            Interval::Minutes1 => KlineInterval::Minutes1,
+            Interval::Minutes3 => KlineInterval::Minutes3,
+        }
+    }
 }
 
 // Core struct
@@ -26,7 +40,7 @@ pub enum Interval {
 pub struct Meshetar {
     pub pair: Pair,
     pub interval: Interval,
-    pub status: Status,
+    pub status: MeshetarStatus,
 }
 
 impl Meshetar {
@@ -34,15 +48,24 @@ impl Meshetar {
         Meshetar {
             interval: Interval::Minutes1,
             pair: Pair::BTCUSDT,
-            status: Status::Idle,
+            status: MeshetarStatus::Idle,
         }
     }
-    pub fn summerize(&self) -> String {
-        format!("Pair: {:?} --- Interval: {:?}", self.pair, self.interval)
+    pub fn change_pair(&mut self, pair: Pair) -> Result<&mut Self, String> {
+        if self.status == MeshetarStatus::Idle {
+            Err(String::from("Cant change pair while working."))
+        } else {
+            self.pair = pair;
+            Ok(self)
+        }
     }
-    pub fn go_to_idle(mut self) -> Self {
-        self.status = Status::Idle;
-        self
+    pub fn change_interval(&mut self, interval: Interval) -> Result<&mut Self, String> {
+        if self.status == MeshetarStatus::Idle {
+            Err(String::from("Cant change interval while working."))
+        } else {
+            self.interval = interval;
+            Ok(self)
+        }
     }
     pub fn summerize_json(self) -> Json<Meshetar> {
         Json(self)

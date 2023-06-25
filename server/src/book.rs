@@ -1,20 +1,17 @@
 use crate::{
     binance_client::BINANCE_CLIENT, database::DB_POOL, formatting::timestamp_to_string,
-    prediction_model,
+    last_kline_time, meshetar::Meshetar, prediction_model, TaskControl,
 };
 use binance_spot_connector_rust::{
-    hyper::BinanceHttpClient,
     market::{self, klines::KlineInterval},
     market_stream::kline::KlineStream,
     tungstenite::BinanceWebSocketClient,
 };
-use hyper::client::HttpConnector;
-use hyper_tls::HttpsConnector;
 use rocket::futures::TryFutureExt;
 use serde::Deserialize;
 use sqlx::{Pool, Row, Sqlite};
 use std::{sync::Arc, time::Duration};
-use tokio::time::sleep;
+use tokio::{sync::Mutex, task::JoinHandle, time::sleep};
 
 #[derive(Debug, Deserialize)]
 struct Kline {
@@ -31,6 +28,7 @@ struct Kline {
     taker_buy_base_asset_volume: String,
     taker_buy_quote_asset_volume: String,
     ignore: String,
+    interval: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,6 +83,7 @@ async fn subscribe_to_price_updates() {
                 let symbol = response.s;
                 let kline = Kline {
                     symbol: symbol.clone(),
+                    interval: String::from("Minutes1"),
                     open_time: response.t,
                     open: response.o,
                     high: response.h,
@@ -123,11 +122,12 @@ async fn subscribe_to_price_updates() {
 async fn insert_kline_to_database(connection: &Pool<Sqlite>, kline: Kline) -> Result<(), String> {
     sqlx::query(
         r#"
-        INSERT OR REPLACE INTO klines (symbol, open_time, open, high, low, close, volume, close_time, quote_asset_volume, number_of_trades, taker_buy_base_asset_volume, taker_buy_quote_asset_volume)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+        INSERT OR REPLACE INTO klines (symbol, interval, open_time, open, high, low, close, volume, close_time, quote_asset_volume, number_of_trades, taker_buy_base_asset_volume, taker_buy_quote_asset_volume)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
         "#,
     )
     .bind(kline.symbol)
+    .bind(kline.interval)
     .bind(kline.open_time)
     .bind(kline.open)
     .bind(kline.high)
@@ -153,90 +153,149 @@ pub async fn latest_kline_date() -> Result<i64, String> {
     Ok(close_time)
 }
 
-pub async fn fetch_history(symbol: String) -> Result<(), String> {
-    log::info!("Fetching {} history.", symbol);
-    let mut klines: Vec<Kline> = Vec::new();
-    let mut start_time: i64 = 1683843793488;
-    let client = BINANCE_CLIENT.get().unwrap();
-    loop {
-        log::info!(
-            "Loading candles from: {:?}",
-            timestamp_to_string(start_time)
-        );
-        let request = market::klines(&symbol, KlineInterval::Minutes1)
-            .start_time(start_time as u64)
-            .limit(1000);
-        let mut res = String::new();
-        {
-            let data = client
-                .send(request)
-                .map_err(|e| format!("Error sending binance request. {:?}", e))
-                .await?;
-            res = data
-                .into_body_str()
-                .map_err(|e| format!("Failed parsing binance data. {:?}", e))
-                .await?;
-        };
+pub async fn clear_history(symbol: String, interval: KlineInterval) -> Result<(), String> {
+    let connection = DB_POOL.get().unwrap();
+    sqlx::query(
+        r#"
+                DELETE FROM klines
+                WHERE interval = ?1 AND symbol = ?2;
+                "#,
+    )
+    .bind(interval.to_string())
+    .bind(symbol)
+    .execute(connection)
+    .map_err(|e| format!("Error deleting klines, {:?}", e))
+    .await?;
+    Ok(())
+}
 
-        let data: Vec<(
-            i64,
-            String,
-            String,
-            String,
-            String,
-            String,
-            i64,
-            String,
-            i64,
-            String,
-            String,
-            String,
-        )> = serde_json::from_str(&res).unwrap();
-        let mut new_klines: Vec<Kline> = Vec::new();
-        for inner_array in data {
-            let kline = Kline {
-                symbol: symbol.to_string(),
-                open_time: inner_array.0,
-                open: inner_array.1,
-                high: inner_array.2,
-                low: inner_array.3,
-                close: inner_array.4,
-                volume: inner_array.5,
-                close_time: inner_array.6,
-                quote_asset_volume: inner_array.7,
-                trades: inner_array.8,
-                taker_buy_base_asset_volume: inner_array.9,
-                taker_buy_quote_asset_volume: inner_array.10,
-                ignore: inner_array.11,
-            };
-            new_klines.push(kline);
-        }
-
-        let last_kline = new_klines.last(); // we know Vec has items at
-                                            // this point
-        match last_kline {
-            Some(last_kline) => {
-                start_time = last_kline.close_time;
-                klines.extend(new_klines);
-            }
-            None => break,
+fn parse_binance_klines(klines: &String, symbol: &String, interval: &KlineInterval) -> Vec<Kline> {
+    let data: Vec<(
+        i64,
+        String,
+        String,
+        String,
+        String,
+        String,
+        i64,
+        String,
+        i64,
+        String,
+        String,
+        String,
+    )> = serde_json::from_str(klines).unwrap();
+    let mut new_klines: Vec<Kline> = Vec::new();
+    for inner_array in data {
+        let kline = Kline {
+            symbol: symbol.to_string(),
+            interval: interval.to_string(),
+            open_time: inner_array.0,
+            open: inner_array.1,
+            high: inner_array.2,
+            low: inner_array.3,
+            close: inner_array.4,
+            volume: inner_array.5,
+            close_time: inner_array.6,
+            quote_asset_volume: inner_array.7,
+            trades: inner_array.8,
+            taker_buy_base_asset_volume: inner_array.9,
+            taker_buy_quote_asset_volume: inner_array.10,
+            ignore: inner_array.11,
         };
-        sleep(Duration::from_secs(1)).await;
+        new_klines.push(kline);
     }
-    log::info!("No klines.");
-    if klines.is_empty() {
-        Err(String::from("No history klines inserted."))
-    } else {
-        log::info!("Starting instertion of klines.");
-        let connection = DB_POOL.get().unwrap();
-        for kline in klines {
-            match insert_kline_to_database(connection, kline).await {
-                Ok(_) => (),
-                Err(e) => {
-                    println!("{:?}", e)
+    new_klines
+}
+
+pub async fn test_run(task_control: Arc<Mutex<TaskControl>>) -> Result<(), String> {
+    let mut a = 0;
+    let mut receiver = task_control.lock().await.receiver.clone();
+    loop {
+        tokio::select! {
+            _ = sleep(Duration::from_secs(1)) => {
+                if a >= 100 {
+                    break;
+                } else {
+                    log::info!("TICK");
+                    a += 1;
+                }
+            }
+            _ = receiver.changed() => {
+                if *receiver.borrow() == false {
+                    break;
                 }
             }
         }
-        Ok(())
     }
+    Ok(())
+}
+
+pub async fn fetch_history(
+    task_control: Arc<Mutex<TaskControl>>,
+    meshetar: Arc<Mutex<Meshetar>>,
+    start_time: i64,
+) -> Result<(), String> {
+    let mut receiver = task_control.lock().await.receiver.clone();
+    let meshetar = meshetar.lock().await;
+    let symbol = meshetar.pair.to_string();
+    let interval = meshetar.interval.to_kline_interval();
+    drop(meshetar);
+    let mut start_time: i64 = start_time.clone() * 1000;
+    let client = BINANCE_CLIENT.get().unwrap();
+    let connection = DB_POOL.get().unwrap();
+    log::info!("Fetching {} history.", symbol);
+    loop {
+        tokio::select! {
+            _ = sleep(Duration::from_secs(1)) => {
+                log::info!(
+                  "Loading candles from: {:?}",
+                    timestamp_to_string(start_time)
+                    );
+                let request = market::klines(&symbol, interval)
+                    .start_time(start_time as u64)
+                    .limit(1000);
+                let mut klines = String::new();
+                {
+                    let data = client
+                        .send(request)
+                        .map_err(|e| format!("Error sending binance request. {:?}", e))
+                        .await?;
+                    klines = data
+                        .into_body_str()
+                        .map_err(|e| format!("Failed parsing binance data. {:?}", e))
+                        .await?;
+                };
+                let new_klines = parse_binance_klines(&klines, &symbol, &interval);
+                let last_kline = new_klines.last(); // we know Vec has items at
+                                                    // this point
+                match last_kline {
+                    Some(last_kline) => {
+                        start_time = last_kline.close_time;
+                        // insert new klines
+                        if !new_klines.is_empty() {
+                            log::info!(
+                                "New klines inserted up to {}.",
+                                timestamp_to_string(last_kline.close_time)
+                            );
+                            for kline in new_klines {
+                                match insert_kline_to_database(connection, kline).await {
+                                    Ok(_) => (),
+                                    Err(e) => {
+                                        println!("{:?}", e)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    None => break,
+                };
+            }
+            _ = receiver.changed() => {
+                if *receiver.borrow() == false {
+                    break;
+                }
+            }
+        }
+    }
+    Ok(())
 }

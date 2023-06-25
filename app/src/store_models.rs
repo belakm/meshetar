@@ -1,10 +1,11 @@
 use serde::Deserialize;
 use strum::{Display, EnumString};
 
-#[derive(Debug, Deserialize, Display, Default, Copy, Clone)]
+#[derive(Debug, Deserialize, Display, Default, Copy, Clone, Eq, PartialEq)]
 pub enum Status {
     #[default]
     Idle,
+    Stopping,
     FetchingHistory,
 }
 

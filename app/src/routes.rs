@@ -1,21 +1,30 @@
+use reqwest::Response;
+
 use crate::{
     store_models::{Interval, Meshetar, Pair, Status},
     utils::console_log,
 };
 
+async fn parse_status(payload: Response) -> Result<Meshetar, String> {
+    match payload.text().await {
+        Ok(meshetar) => {
+            let meshetar = serde_json::from_str(&meshetar);
+            match meshetar {
+                Ok(meshetar) => Ok(meshetar),
+                Err(e) => Err(String::from(format!("Error parsing response {:?}", e))),
+            }
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 pub async fn get_status() -> Result<Meshetar, String> {
     let resp = reqwest::get("http://localhost:8000/status").await;
     match resp {
-        Ok(resp) => match resp.text().await {
-            Ok(meshetar) => {
-                let meshetar = serde_json::from_str(&meshetar);
-                match meshetar {
-                    Ok(meshetar) => Ok(meshetar),
-                    Err(e) => Err(String::from(format!("Error parsing response {:?}", e))),
-                }
-            }
-            Err(e) => Err(e.to_string()),
-        },
+        Ok(resp) => {
+            let meshetar = parse_status(resp).await?;
+            Ok(meshetar)
+        }
         Err(e) => Err(e.to_string()),
     }
 }
@@ -31,12 +40,31 @@ pub async fn fetch_last_kline_time() -> Result<String, String> {
     }
 }
 
-pub async fn stop_operation() -> Result<Status, Box<dyn std::error::Error>> {
-    Ok(Status::Idle)
+pub async fn stop() -> Result<Meshetar, String> {
+    let client = reqwest::Client::new();
+    let resp = client.post("http://localhost:8000/stop").send().await;
+    match resp {
+        Ok(resp) => {
+            let meshetar = parse_status(resp).await?;
+            Ok(meshetar)
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
-pub async fn start_operation() -> Result<Status, Box<dyn std::error::Error>> {
-    Ok(Status::Idle)
+pub async fn fetch_history() -> Result<Meshetar, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("http://localhost:8000/fetch_history")
+        .send()
+        .await;
+    match resp {
+        Ok(resp) => {
+            let meshetar = parse_status(resp).await?;
+            Ok(meshetar)
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 pub async fn change_pair(pair: Pair) -> Result<Pair, String> {

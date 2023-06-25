@@ -12,16 +12,22 @@ mod rlang_runner;
 // mod plot;
 
 use book::latest_kline_date;
-use hyper::server::accept::Accept;
+use env_logger::Builder;
+use log::LevelFilter;
 use meshetar::Interval;
 use meshetar::Meshetar;
+use meshetar::MeshetarStatus;
 use meshetar::Pair;
 use rocket::form::Form;
+use rocket::response::status::Custom;
 use rocket::serde::json::Json;
 use rocket::State;
 use serde::Deserialize;
+use std::str::FromStr;
 use std::sync::Arc;
+use tokio::sync::watch;
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 // Dependencies
 //
 use rocket::catch;
@@ -44,7 +50,6 @@ impl Fairing for CORS {
             kind: Kind::Response,
         }
     }
-
     async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
         response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
         response.set_header(Header::new(
@@ -84,20 +89,36 @@ fn all_options() {
     /* Intentionally left empty */
 }
 
+pub struct TaskControl {
+    sender: watch::Sender<bool>,
+    receiver: watch::Receiver<bool>,
+}
+
 #[rocket::main]
 async fn main() -> Result<(), String> {
+    // Sets logging for sqlx to warn and above, info logs are too verbose
+    let mut builder = Builder::new();
+    builder.filter(None, LevelFilter::Info); // a default for other libs
+    builder.filter(Some("sqlx"), LevelFilter::Warn);
+    builder.init();
+
     log::info!("Igniting rocket.");
     binance_client::initialize().await?;
     database::initialize().await?;
     let meshetar = Arc::new(Mutex::new(Meshetar::new()));
+    let (sender, receiver) = watch::channel(false);
+    let task_control = Arc::new(Mutex::new(TaskControl { sender, receiver }));
 
     match rocket::build()
         .attach(CORS)
         .manage(meshetar)
+        .manage(task_control)
         .mount(
             "/",
             routes![
-                history_fetch,
+                fetch_history,
+                clear_history,
+                stop_all_operations,
                 meshetar_status,
                 interval_put,
                 pair_put,
@@ -116,31 +137,75 @@ async fn main() -> Result<(), String> {
     }
 }
 
-#[post("/history_fetch")]
-async fn history_fetch(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<String> {
-    tokio::join!(async {
-        let mut m = meshetar.lock().await; // Change the field in Meshetar
-        m.status = meshetar::Status::FetchingHistory;
-        let pair = m.pair.to_string();
-        match book::fetch_history(pair).await {
+#[post("/fetch_history")]
+async fn fetch_history(
+    meshetar: &State<Arc<Mutex<Meshetar>>>,
+    task_control: &State<Arc<Mutex<TaskControl>>>,
+) -> Accepted<Json<Meshetar>> {
+    // Change status
+    let meshetar_clone = Arc::clone(&meshetar.inner());
+    meshetar_clone.lock().await.status = MeshetarStatus::FetchingHistory;
+    let meshetar_clone2 = Arc::clone(&meshetar.inner());
+    let meshetar_clone3 = Arc::clone(&meshetar.inner());
+    let meshetar_clone4 = Arc::clone(&meshetar.inner());
+
+    // Set status of task control to "working"
+    &task_control.lock().await.sender.send(true);
+    let reciever = Arc::clone(&task_control.inner());
+
+    tokio::spawn(async move {
+        let fetch_start = (chrono::Utc::now() - chrono::Duration::days(100)).timestamp();
+        match book::fetch_history(reciever, meshetar_clone2, fetch_start).await {
             Ok(_) => log::info!("History fetching success."),
             Err(e) => log::info!("History fetching err: {:?}", e),
         };
-        m.status = meshetar::Status::Idle;
+        let mut meshetar_clone = meshetar_clone3.lock().await;
+        meshetar_clone.status = MeshetarStatus::Idle;
     });
-    Accepted(Some(meshetar.lock().await.summerize()))
+    let summary = meshetar_clone4.lock().await.summerize_json();
+    Accepted(Some(summary))
+}
+
+#[post("/stop")]
+async fn stop_all_operations(
+    meshetar: &State<Arc<Mutex<Meshetar>>>,
+    task_control: &State<Arc<Mutex<TaskControl>>>,
+) -> Accepted<Json<Meshetar>> {
+    if let Err(e) = task_control.lock().await.sender.send(false) {
+        log::warn!("Failed to stop task. {}", e);
+    }
+    let mut meshetar = meshetar.lock().await;
+    meshetar.status = MeshetarStatus::Stopping;
+    Accepted(Some(meshetar.summerize_json()))
+}
+
+#[post("/clear_history")]
+async fn clear_history(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Json<Meshetar>> {
+    tokio::join!(async {
+        let m = meshetar.lock().await;
+        let pair = m.pair.to_string();
+        let interval = m.interval.to_kline_interval();
+        match book::clear_history(pair, interval).await {
+            Ok(_) => log::info!("History cleaning success."),
+            Err(e) => log::info!("History cleaning err: {:?}", e),
+        };
+    });
+    Accepted(Some(meshetar.lock().await.summerize_json()))
 }
 
 #[get("/status")]
 async fn meshetar_status(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Json<Meshetar>> {
-    let meshetar = meshetar.lock().await;
+    let meshetar_clone = Arc::clone(&meshetar.inner());
+    let meshetar = meshetar_clone.lock().await;
     Accepted(Some(meshetar.summerize_json()))
 }
 
 #[get("/last_kline_time")]
 async fn last_kline_time() -> Accepted<String> {
-    let last_kline_time = latest_kline_date().await.unwrap();
-    Accepted(Some(last_kline_time.to_string()))
+    match latest_kline_date().await {
+        Ok(last_kline_time) => Accepted(Some(last_kline_time.to_string())),
+        Err(_) => Accepted(Some(String::from("0"))),
+    }
 }
 
 #[derive(FromForm, Deserialize)]
@@ -151,21 +216,18 @@ struct IntervalPutPayload<'r> {
 async fn interval_put(
     meshetar: &State<Arc<Mutex<Meshetar>>>,
     data: Form<IntervalPutPayload<'_>>,
-) -> Accepted<String> {
+) -> Result<Accepted<String>, Custom<String>> {
     let mut meshetar = meshetar.lock().await;
-    match meshetar.status {
-        meshetar::Status::Idle => match data.interval {
-            "Minutes3" => {
-                meshetar.interval = Interval::Minutes3;
-                Accepted(Some(meshetar.interval.to_string()))
-            }
-            "Minutes1" => {
-                meshetar.interval = Interval::Minutes1;
-                Accepted(Some(meshetar.interval.to_string()))
-            }
-            _ => Accepted(Some(meshetar.interval.to_string())),
-        },
-        _ => Accepted(Some("Currently working on something else.".to_string())),
+    if let Ok(value) = Interval::from_str(data.interval) {
+        match meshetar.change_interval(value) {
+            Ok(_) => Ok(Accepted(Some(value.to_string()))),
+            Err(e) => Err(Custom(Status::ServiceUnavailable, e)),
+        }
+    } else {
+        Err(Custom(
+            Status::BadRequest,
+            String::from("Couldnt parse interval."),
+        ))
     }
 }
 
@@ -177,20 +239,17 @@ struct PairPutPayload<'r> {
 async fn pair_put(
     meshetar: &State<Arc<Mutex<Meshetar>>>,
     data: Form<PairPutPayload<'_>>,
-) -> Accepted<String> {
+) -> Result<Accepted<String>, Custom<String>> {
     let mut meshetar = meshetar.lock().await;
-    match meshetar.status {
-        meshetar::Status::Idle => match data.pair {
-            "BTCUSDT" => {
-                meshetar.pair = Pair::BTCUSDT;
-                Accepted(Some(data.pair.to_string()))
-            }
-            "ETHBTC" => {
-                meshetar.pair = Pair::ETHBTC;
-                Accepted(Some(data.pair.to_string()))
-            }
-            _ => Accepted(Some(meshetar.pair.to_string())),
-        },
-        _ => Accepted(Some("Currently working on something else.".to_string())),
+    if let Ok(value) = Pair::from_str(data.pair) {
+        match meshetar.change_pair(value) {
+            Ok(_) => Ok(Accepted(Some(value.to_string()))),
+            Err(e) => Err(Custom(Status::ServiceUnavailable, e)),
+        }
+    } else {
+        Err(Custom(
+            Status::BadRequest,
+            String::from("Couldnt parse pair."),
+        ))
     }
 }
