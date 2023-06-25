@@ -207,29 +207,6 @@ fn parse_binance_klines(klines: &String, symbol: &String, interval: &KlineInterv
     new_klines
 }
 
-pub async fn test_run(task_control: Arc<Mutex<TaskControl>>) -> Result<(), String> {
-    let mut a = 0;
-    let mut receiver = task_control.lock().await.receiver.clone();
-    loop {
-        tokio::select! {
-            _ = sleep(Duration::from_secs(1)) => {
-                if a >= 100 {
-                    break;
-                } else {
-                    log::info!("TICK");
-                    a += 1;
-                }
-            }
-            _ = receiver.changed() => {
-                if *receiver.borrow() == false {
-                    break;
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 pub async fn fetch_history(
     task_control: Arc<Mutex<TaskControl>>,
     meshetar: Arc<Mutex<Meshetar>>,

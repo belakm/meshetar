@@ -105,6 +105,14 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
             }
         });
     };
+    let clear_history = move |_| {
+        spawn_local_scoped(cx, async move {
+            match routes::clear_history().await {
+                Ok(meshetar) => sync_store(store, meshetar),
+                _ => (),
+            }
+        });
+    };
     view! {cx,
         header(class="container") {
             h1 {
@@ -142,6 +150,9 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                         }
                     }
                     div(class="grid") {
+                        button(on:click=clear_history, disabled=*store.server_state.get() != Status::Idle) {
+                            "Clear history"
+                        }
                         button(on:click=start_operation, disabled=*store.server_state.get() != Status::Idle) {
                             "⏺︎ START"
                         }

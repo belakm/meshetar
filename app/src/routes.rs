@@ -52,6 +52,21 @@ pub async fn stop() -> Result<Meshetar, String> {
     }
 }
 
+pub async fn clear_history() -> Result<Meshetar, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("http://localhost:8000/clear_history")
+        .send()
+        .await;
+    match resp {
+        Ok(resp) => {
+            let meshetar = parse_status(resp).await?;
+            Ok(meshetar)
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 pub async fn fetch_history() -> Result<Meshetar, String> {
     let client = reqwest::Client::new();
     let resp = client
