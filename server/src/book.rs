@@ -5,8 +5,9 @@ use crate::{
 use binance_spot_connector_rust::{
     market::{self, klines::KlineInterval},
     market_stream::kline::KlineStream,
-    tungstenite::BinanceWebSocketClient,
+    tokio_tungstenite::BinanceWebSocketClient,
 };
+use futures::StreamExt; // needed for websocket to binance
 use rocket::futures::TryFutureExt;
 use serde::Deserialize;
 use sqlx::{Pool, Row, Sqlite};
@@ -62,61 +63,88 @@ struct WebsocketResponse {
 
 const BINANCE_WSS_BASE_URL: &str = "wss://stream.binance.com:9443/ws";
 
-async fn subscribe_to_price_updates() {
-    // Establish connection
-    let mut conn =
-        BinanceWebSocketClient::connect_with_url(BINANCE_WSS_BASE_URL).expect("Failed to connect");
-    // Subscribe to streams
-    conn.subscribe(vec![
-        &KlineStream::new("BTCUSDT", KlineInterval::Minutes1).into(),
-        // &KlineStream::new("BNBBUSD", KlineInterval::Minutes3).into(),
-    ]);
-    // Read messages
-    while let Ok(message) = conn.as_mut().read_message() {
-        let data = message.into_data();
-        let string_data = String::from_utf8(data).expect("Found invalid UTF-8 chars");
-        let response: Result<WebsocketResponse, serde_json::Error> =
-            serde_json::from_str(&string_data);
-        match response {
-            Ok(response) => {
-                let response = response.k;
-                let symbol = response.s;
-                let kline = Kline {
-                    symbol: symbol.clone(),
-                    interval: String::from("Minutes1"),
-                    open_time: response.t,
-                    open: response.o,
-                    high: response.h,
-                    low: response.l,
-                    close: response.c,
-                    volume: response.v,
-                    close_time: response.T,
-                    quote_asset_volume: response.q,
-                    trades: response.n,
-                    taker_buy_base_asset_volume: response.V,
-                    taker_buy_quote_asset_volume: response.Q,
-                    ignore: response.B,
-                };
-                let connection = DB_POOL.get().unwrap();
-                match insert_kline_to_database(connection, kline).await {
-                    Ok(_) => match prediction_model::run().await {
-                        Ok(signal) => println!("Kline analyzed: {:?}", signal),
-                        Err(e) => {
-                            println!("{:?}", e)
+pub async fn run(
+    task_control: Arc<Mutex<TaskControl>>,
+    meshetar: Arc<Mutex<Meshetar>>,
+) -> Result<(), String> {
+    // Get params ready
+    let meshetar = meshetar.lock().await;
+    let pair = meshetar.pair.to_string();
+    let interval = meshetar.interval.to_kline_interval();
+    drop(meshetar);
+
+    let (mut conn, _) = BinanceWebSocketClient::connect_async(BINANCE_WSS_BASE_URL)
+        .await
+        .expect("Failed to connect");
+
+    conn.subscribe(vec![&KlineStream::new(&pair, interval).into()])
+        .await;
+
+    let mut receiver = task_control.lock().await.receiver.clone();
+
+    loop {
+        tokio::select! {
+            _ = receiver.changed() => {
+                if *receiver.borrow() == false {
+                    break;
+                }
+            },
+            Some(message) = conn.as_mut().next() => {
+                match message {
+                    Ok(message) => {
+                        let data = message.into_data();
+                        let string_data = String::from_utf8(data).expect("Found invalid UTF-8 chars");
+                        let response: Result<WebsocketResponse, serde_json::Error> =
+                            serde_json::from_str(&string_data);
+                        match response {
+                            Ok(response) => {
+                                let response = response.k;
+                                let symbol = response.s;
+                                let kline = Kline {
+                                    symbol: symbol.clone(),
+                                    interval: String::from("Minutes1"),
+                                    open_time: response.t,
+                                    open: response.o,
+                                    high: response.h,
+                                    low: response.l,
+                                    close: response.c,
+                                    volume: response.v,
+                                    close_time: response.T,
+                                    quote_asset_volume: response.q,
+                                    trades: response.n,
+                                    taker_buy_base_asset_volume: response.V,
+                                    taker_buy_quote_asset_volume: response.Q,
+                                    ignore: response.B,
+                                };
+                                let connection = DB_POOL.get().unwrap();
+                                match insert_kline_to_database(connection, kline).await {
+                                    Ok(_) => match prediction_model::run().await {
+                                        Ok(signal) => println!("Kline analyzed: {:?}", signal),
+                                        Err(e) => {
+                                            println!("{:?}", e)
+                                        }
+                                    },
+                                    Err(e) => {
+                                        println!("{:?}", e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                println!("Error on socket {:?}", e)
+                            }
                         }
                     },
-                    Err(e) => {
-                        println!("{:?}", e);
-                    }
+                    Err(e) => log::error!("Empty socket {}", e)
                 }
-            }
-            Err(e) => {
-                println!("Error on socket {:?}", e)
+            },
+            else => {
+                log::info!("Weird socket.")
             }
         }
     }
     // Disconnect
-    conn.close().expect("Failed to disconnect");
+    conn.close().await.expect("Failed to disconnect");
+    Ok(())
 }
 
 async fn insert_kline_to_database(connection: &Pool<Sqlite>, kline: Kline) -> Result<(), String> {
@@ -223,6 +251,11 @@ pub async fn fetch_history(
     log::info!("Fetching {} history.", symbol);
     loop {
         tokio::select! {
+            _ = receiver.changed() => {
+                if *receiver.borrow() == false {
+                    break;
+                }
+            },
             _ = sleep(Duration::from_secs(1)) => {
                 log::info!(
                   "Loading candles from: {:?}",
@@ -266,11 +299,6 @@ pub async fn fetch_history(
                     }
                     None => break,
                 };
-            }
-            _ = receiver.changed() => {
-                if *receiver.borrow() == false {
-                    break;
-                }
             }
         }
     }

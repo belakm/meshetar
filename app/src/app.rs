@@ -18,7 +18,6 @@ fn sync_store(store: &Store, meshetar: Meshetar) {
 
 #[component]
 pub fn App<G: Html>(cx: Scope) -> View<G> {
-    let is_running = create_signal(cx, false);
     let store = Store {
         message: create_rc_signal(String::from("")),
         mode: create_rc_signal(String::from("Idle")),
@@ -28,16 +27,6 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
         last_kline_time: create_rc_signal(String::from("0")),
     };
     let store = provide_context(cx, store);
-
-    // Listener for server state
-    create_effect(cx, move || {
-        let server_state = *store.server_state.get();
-        match server_state {
-            Status::Idle => is_running.set(false),
-            Status::FetchingHistory => is_running.set(true),
-            Status::Stopping => is_running.set(true),
-        }
-    });
 
     spawn_local_scoped(cx, async move {
         loop {
@@ -88,8 +77,7 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
             Err(e) => console_log(&e.to_string()),
         }
     };
-    let start_operation = move |_| {
-        is_running.set(true);
+    let fetch_history = move |_| {
         spawn_local_scoped(cx, async move {
             match routes::fetch_history().await {
                 Ok(meshetar) => sync_store(store, meshetar),
@@ -97,7 +85,15 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
             }
         });
     };
-    let stop_operation = move |_| {
+    let run = move |_| {
+        spawn_local_scoped(cx, async move {
+            match routes::run().await {
+                Ok(meshetar) => sync_store(store, meshetar),
+                _ => (),
+            }
+        });
+    };
+    let stop = move |_| {
         spawn_local_scoped(cx, async move {
             match routes::stop().await {
                 Ok(meshetar) => sync_store(store, meshetar),
@@ -124,15 +120,13 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
         }
         main(class="container") {
             article {
-                div {
-                    div(class="grid") {
-                        p {
-                            strong {"Current status: "} (store.mode)
-                        }
-                        p {
-                            strong {"Last kline time: "} (readable_date(&store.last_kline_time.get()))
-                        }
-                    }
+                p {
+                    strong {"Current status: "} (store.mode)
+                }
+                p {
+                    strong {"Last kline time: "} (readable_date(&store.last_kline_time.get()))
+                }
+                div(class="grid") {
                     select(bind:value=store.pair, on:change=handle_change_pair) {
                         option {
                             "BTCUSDT"
@@ -149,17 +143,23 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                             "Minutes3"
                         }
                     }
-                    div(class="grid") {
-                        button(on:click=clear_history, disabled=*store.server_state.get() != Status::Idle) {
-                            "Clear history"
-                        }
-                        button(on:click=start_operation, disabled=*store.server_state.get() != Status::Idle) {
-                            "⏺︎ START"
-                        }
-                        button(on:click=stop_operation, disabled=*store.server_state.get() != Status::FetchingHistory) {
-                            "⏹︎ STOP"
-                        }
+                }
+                div(class="grid") {
+                    button(on:click=fetch_history, disabled=*store.server_state.get() != Status::Idle) {
+                        "Fetch history"
                     }
+                    button(on:click=clear_history, disabled=*store.server_state.get() != Status::Idle) {
+                        "Clear history"
+                    }
+                    button(on:click=run, disabled=*store.server_state.get() != Status::Idle) {
+                        "⏺︎ START"
+                    }
+                    button(on:click=stop, disabled=*store.server_state.get() == Status::Idle) {
+                        "⏹︎ STOP"
+                    }
+                }
+                div(class="grid") {
+
                 }
             }
             // img(style="width: 100%;", src=format!("http://localhost:8000/plot/account_balance_history?timestamp={}", props.state.get()))

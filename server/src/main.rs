@@ -116,14 +116,15 @@ async fn main() -> Result<(), String> {
         .mount(
             "/",
             routes![
+                all_options,
+                meshetar_status,
+                stop_all_operations,
                 fetch_history,
                 clear_history,
-                stop_all_operations,
-                meshetar_status,
                 interval_put,
                 pair_put,
-                all_options,
-                last_kline_time
+                last_kline_time,
+                run
             ],
         )
         .mount("/", FileServer::new("static", Options::None).rank(1))
@@ -135,6 +136,39 @@ async fn main() -> Result<(), String> {
         Ok(_) => Ok(()),
         Err(e) => Err(e),
     }
+}
+
+#[post("/run")]
+async fn run(
+    meshetar: &State<Arc<Mutex<Meshetar>>>,
+    task_control: &State<Arc<Mutex<TaskControl>>>,
+) -> Accepted<Json<Meshetar>> {
+    // Set state to running
+    let meshetar_clone = Arc::clone(&meshetar.inner());
+    meshetar_clone.lock().await.status = MeshetarStatus::Running;
+    drop(meshetar_clone);
+    // Set task control to running
+    &task_control.lock().await.sender.send(true);
+    let reciever = Arc::clone(&task_control.inner());
+
+    // used as input to function
+    let meshetar_clone2 = Arc::clone(&meshetar.inner());
+    // used for setting the state back to Idle later
+    let meshetar_clone3 = Arc::clone(&meshetar.inner());
+    // used for extracting the early response status
+    let meshetar_clone4 = Arc::clone(&meshetar.inner());
+    // Start running
+    tokio::spawn(async move {
+        match book::run(reciever, meshetar_clone2).await {
+            Ok(_) => log::warn!("Running ended successfully"),
+            Err(e) => log::error!("Running failed with error {}", e),
+        };
+        let mut meshetar_clone = meshetar_clone3.lock().await;
+        meshetar_clone.status = MeshetarStatus::Idle;
+    });
+
+    let summary = meshetar_clone4.lock().await.summerize_json();
+    Accepted(Some(summary))
 }
 
 #[post("/fetch_history")]

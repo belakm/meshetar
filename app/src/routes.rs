@@ -82,6 +82,18 @@ pub async fn fetch_history() -> Result<Meshetar, String> {
     }
 }
 
+pub async fn run() -> Result<Meshetar, String> {
+    let client = reqwest::Client::new();
+    let resp = client.post("http://localhost:8000/run").send().await;
+    match resp {
+        Ok(resp) => {
+            let meshetar = parse_status(resp).await?;
+            Ok(meshetar)
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 pub async fn change_pair(pair: Pair) -> Result<Pair, String> {
     let params = [("pair", pair.to_string())];
     let client = reqwest::Client::new();

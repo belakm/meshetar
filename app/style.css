@@ -44,6 +44,10 @@ body > main {
   padding-bottom: 0;
 }
 
+body > main > article {
+  margin-top: 0;
+}
+
 header {  
   display: flex;
   flex-direction: row;

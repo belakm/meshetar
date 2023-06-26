@@ -10,6 +10,7 @@ pub enum MeshetarStatus {
     Idle,
     Stopping,
     FetchingHistory,
+    Running,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Display, EnumString)]
