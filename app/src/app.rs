@@ -159,9 +159,6 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                     button(class="secondary", on:click=clear_history, disabled=*store.server_state.get() != Status::Idle) {
                         "🧹 Clear history"
                     }
-                    button(class="secondary", on:click=create_model, disabled=*store.server_state.get() != Status::Idle) {
-                        "🧑‍🔬 Create model"
-                    }
                 }
                 div {
                     hr(style="margin: calc(2*var(--spacing)) 0; margin-top: var(--spacing);") {}
