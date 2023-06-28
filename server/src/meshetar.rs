@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use binance_spot_connector_rust::market::klines::KlineInterval;
 use rocket::serde::{json::Json, Serialize};
 use strum::{Display, EnumString};
-use tokio::runtime::Handle;
 
 #[derive(Copy, Clone, Debug, Serialize, PartialEq)]
 pub enum MeshetarStatus {

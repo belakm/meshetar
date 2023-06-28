@@ -1,6 +1,10 @@
 use crate::{
-    binance_client::BINANCE_CLIENT, database::DB_POOL, formatting::timestamp_to_string,
-    last_kline_time, meshetar::Meshetar, prediction_model, TaskControl,
+    binance_client::BINANCE_CLIENT,
+    database::DB_POOL,
+    formatting::timestamp_to_string,
+    meshetar::Meshetar,
+    prediction_model::{self, TradeSignal},
+    TaskControl,
 };
 use binance_spot_connector_rust::{
     market::{self, klines::KlineInterval},
@@ -12,9 +16,10 @@ use rocket::futures::TryFutureExt;
 use serde::Deserialize;
 use sqlx::{Pool, Row, Sqlite};
 use std::{sync::Arc, time::Duration};
-use tokio::{sync::Mutex, task::JoinHandle, time::sleep};
+use tokio::{sync::Mutex, time::sleep};
 
-#[derive(Debug, Deserialize)]
+#[allow(unused)]
+#[derive(Deserialize)]
 struct Kline {
     symbol: String,
     open_time: i64,
@@ -28,11 +33,12 @@ struct Kline {
     trades: i64,
     taker_buy_base_asset_volume: String,
     taker_buy_quote_asset_volume: String,
-    ignore: String,
+    // ignore: String,
     interval: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
+#[derive(Deserialize)]
 struct WebsocketKline {
     t: i64,    // Kline start time
     T: i64,    // Kline close time
@@ -53,7 +59,8 @@ struct WebsocketKline {
     B: String, // Ignore
 }
 
-#[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
+#[derive(Deserialize)]
 struct WebsocketResponse {
     e: String, // Event type
     E: i64,    // Event time
@@ -71,6 +78,7 @@ pub async fn run(
     let meshetar = meshetar.lock().await;
     let pair = meshetar.pair.to_string();
     let interval = meshetar.interval.to_kline_interval();
+    let interval_string = meshetar.interval.to_string();
     drop(meshetar);
 
     let (mut conn, _) = BinanceWebSocketClient::connect_async(BINANCE_WSS_BASE_URL)
@@ -100,9 +108,10 @@ pub async fn run(
                             Ok(response) => {
                                 let response = response.k;
                                 let symbol = response.s;
+                                let time = response.T.clone();
                                 let kline = Kline {
                                     symbol: symbol.clone(),
-                                    interval: String::from("Minutes1"),
+                                    interval: interval_string.clone(),
                                     open_time: response.t,
                                     open: response.o,
                                     high: response.h,
@@ -114,27 +123,36 @@ pub async fn run(
                                     trades: response.n,
                                     taker_buy_base_asset_volume: response.V,
                                     taker_buy_quote_asset_volume: response.Q,
-                                    ignore: response.B,
                                 };
                                 let connection = DB_POOL.get().unwrap();
                                 match insert_kline_to_database(connection, kline).await {
-                                    Ok(_) => match prediction_model::run().await {
-                                        Ok(signal) => println!("Kline analyzed: {:?}", signal),
-                                        Err(e) => {
-                                            println!("{:?}", e)
+                                    Ok(_) => {
+                                        drop(connection);
+                                        match prediction_model::run().await {
+                                            Ok(signal) => {
+                                                let connection = DB_POOL.get().unwrap();
+                                                match insert_signal_to_database(connection, signal, symbol.clone(), interval_string.clone(), time).await {
+                                                    Ok(_) => log::info!("New signal inserted."),
+                                                    Err(e) => log::warn!("{}", e)
+                                                };
+                                                log::info!("Kline analyzed: {:?}", signal)
+                                            },
+                                            Err(e) => {
+                                                log::warn!("{:?}", e)
+                                            }
                                         }
                                     },
                                     Err(e) => {
-                                        println!("{:?}", e);
+                                        log::warn!("{}", e);
                                     }
                                 }
                             }
                             Err(e) => {
-                                println!("Error on socket {:?}", e)
+                               log::warn!("Error on socket {}", e)
                             }
                         }
                     },
-                    Err(e) => log::error!("Empty socket {}", e)
+                    Err(e) => log::warn!("Empty socket {}", e)
                 }
             },
             else => {
@@ -168,6 +186,29 @@ async fn insert_kline_to_database(connection: &Pool<Sqlite>, kline: Kline) -> Re
     .bind(kline.taker_buy_base_asset_volume)
     .bind(kline.taker_buy_quote_asset_volume)
     .execute(connection).map_err(|e| format!("Error inserting a kline into Database. {:?}", e)).await?;
+    Ok(())
+}
+
+async fn insert_signal_to_database(
+    connection: &Pool<Sqlite>,
+    signal: TradeSignal,
+    symbol: String,
+    interval: String,
+    time: i64,
+) -> Result<(), String> {
+    sqlx::query(
+        r#"
+        INSERT OR REPLACE INTO signals (symbol, interval, time, signal)
+        VALUES (?1, ?2, ?3, ?4)
+        "#,
+    )
+    .bind(symbol)
+    .bind(interval)
+    .bind(time)
+    .bind(signal.to_string())
+    .execute(connection)
+    .map_err(|e| format!("Error inserting a kline into Database. {:?}", e))
+    .await?;
     Ok(())
 }
 
@@ -228,7 +269,6 @@ fn parse_binance_klines(klines: &String, symbol: &String, interval: &KlineInterv
             trades: inner_array.8,
             taker_buy_base_asset_volume: inner_array.9,
             taker_buy_quote_asset_volume: inner_array.10,
-            ignore: inner_array.11,
         };
         new_klines.push(kline);
     }

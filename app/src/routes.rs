@@ -1,9 +1,6 @@
 use reqwest::Response;
 
-use crate::{
-    store_models::{Interval, Meshetar, Pair, Status},
-    utils::console_log,
-};
+use crate::store_models::{Interval, Meshetar, Pair};
 
 async fn parse_status(payload: Response) -> Result<Meshetar, String> {
     match payload.text().await {
@@ -85,6 +82,21 @@ pub async fn fetch_history() -> Result<Meshetar, String> {
 pub async fn run() -> Result<Meshetar, String> {
     let client = reqwest::Client::new();
     let resp = client.post("http://localhost:8000/run").send().await;
+    match resp {
+        Ok(resp) => {
+            let meshetar = parse_status(resp).await?;
+            Ok(meshetar)
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub async fn create_model() -> Result<Meshetar, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("http://localhost:8000/create_model")
+        .send()
+        .await;
     match resp {
         Ok(resp) => {
             let meshetar = parse_status(resp).await?;

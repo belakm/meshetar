@@ -109,6 +109,14 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
             }
         });
     };
+    let create_model = move |_| {
+        spawn_local_scoped(cx, async move {
+            match routes::create_model().await {
+                Ok(meshetar) => sync_store(store, meshetar),
+                _ => (),
+            }
+        });
+    };
     view! {cx,
         header(class="container") {
             h1 {
@@ -145,14 +153,22 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                     }
                 }
                 div(class="grid") {
-                    button(on:click=fetch_history, disabled=*store.server_state.get() != Status::Idle) {
-                        "Fetch history"
+                    button(class="secondary", on:click=fetch_history, disabled=*store.server_state.get() != Status::Idle) {
+                        "📥 Fetch history"
                     }
-                    button(on:click=clear_history, disabled=*store.server_state.get() != Status::Idle) {
-                        "Clear history"
+                    button(class="secondary", on:click=clear_history, disabled=*store.server_state.get() != Status::Idle) {
+                        "🧹 Clear history"
                     }
+                    button(class="secondary", on:click=create_model, disabled=*store.server_state.get() != Status::Idle) {
+                        "🧑‍🔬 Create model"
+                    }
+                }
+                div {
+                    hr(style="margin: calc(2*var(--spacing)) 0; margin-top: var(--spacing);") {}
+                }
+                div(class="grid") {
                     button(on:click=run, disabled=*store.server_state.get() != Status::Idle) {
-                        "⏺︎ START"
+                        "▶️ START"
                     }
                     button(on:click=stop, disabled=*store.server_state.get() == Status::Idle) {
                         "⏹︎ STOP"

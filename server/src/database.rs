@@ -77,6 +77,13 @@ pub async fn setup_tables() -> Result<(), String> {
             taker_buy_quote_asset_volume REAL NOT NULL,
             PRIMARY KEY (open_time, symbol, interval)
         );
+        CREATE TABLE IF NOT EXISTS signals (
+            symbol TEXT NOT NULL,
+            interval TEXT NOT NULL,
+            time INTEGER NOT NULL,
+            signal TEXT NOT NULL,
+            PRIMARY KEY (symbol, interval, time)
+        );
         COMMIT;",
             )
             .execute(connection)

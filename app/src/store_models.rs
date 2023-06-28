@@ -7,7 +7,7 @@ pub enum Status {
     Idle,
     Stopping,
     FetchingHistory,
-    Running
+    Running,
 }
 
 #[derive(Debug, Deserialize, Display, EnumString)]
