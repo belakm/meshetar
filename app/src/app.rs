@@ -5,7 +5,7 @@ use crate::utils::{console_log, readable_date};
 use gloo_timers::future::TimeoutFuture;
 use sycamore::futures::spawn_local_scoped;
 use sycamore::prelude::{Html, Scope};
-use sycamore::reactive::{create_effect, create_rc_signal, create_signal, provide_context};
+use sycamore::reactive::{create_rc_signal, provide_context};
 use sycamore::view::View;
 use sycamore::{component, view};
 
@@ -104,14 +104,6 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
     let clear_history = move |_| {
         spawn_local_scoped(cx, async move {
             match routes::clear_history().await {
-                Ok(meshetar) => sync_store(store, meshetar),
-                _ => (),
-            }
-        });
-    };
-    let create_model = move |_| {
-        spawn_local_scoped(cx, async move {
-            match routes::create_model().await {
                 Ok(meshetar) => sync_store(store, meshetar),
                 _ => (),
             }
