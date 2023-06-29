@@ -6,10 +6,9 @@ mod database;
 mod formatting;
 mod load_config;
 mod meshetar;
+mod plot;
 mod prediction_model;
 mod rlang_runner;
-// mod api;
-// mod plot;
 
 use book::latest_kline_date;
 use env_logger::Builder;
@@ -18,27 +17,24 @@ use meshetar::Interval;
 use meshetar::Meshetar;
 use meshetar::MeshetarStatus;
 use meshetar::Pair;
-use rocket::form::Form;
-use rocket::response::status::Custom;
-use rocket::serde::json::Json;
-use rocket::State;
-use serde::Deserialize;
-use std::str::FromStr;
-use std::sync::Arc;
-use tokio::sync::watch;
-use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
-// Dependencies
-//
 use rocket::catch;
 use rocket::fairing::{Fairing, Info, Kind};
+use rocket::form::Form;
 use rocket::fs::FileServer;
 use rocket::fs::Options;
 use rocket::futures::TryFutureExt;
 use rocket::http::Header;
 use rocket::http::Status;
 use rocket::response::status::Accepted;
+use rocket::response::status::Custom;
+use rocket::serde::json::Json;
+use rocket::State;
 use rocket::{Request, Response};
+use serde::Deserialize;
+use std::str::FromStr;
+use std::sync::Arc;
+use tokio::sync::watch;
+use tokio::sync::Mutex;
 
 pub struct CORS;
 
@@ -124,7 +120,8 @@ async fn main() -> Result<(), String> {
                 interval_put,
                 pair_put,
                 last_kline_time,
-                run
+                run,
+                plot_chart
             ],
         )
         .mount("/", FileServer::new("static", Options::None).rank(1))
@@ -232,6 +229,21 @@ async fn meshetar_status(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Jso
     let meshetar_clone = Arc::clone(&meshetar.inner());
     let meshetar = meshetar_clone.lock().await;
     Accepted(Some(meshetar.summerize_json()))
+}
+
+#[get("/plot_chart")]
+async fn plot_chart(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Result<String, ()> {
+    let meshetar = meshetar.lock().await;
+    let pair = meshetar.pair.to_string();
+    let interval = "1m".to_string(); // TODO: meshetar.interval.to_string();
+    drop(meshetar);
+    match book::plot_data(pair, interval).await {
+        Ok(data) => match plot::plot_chart(data).await {
+            Ok(path) => Ok(path),
+            Err(e) => Err(log::warn!("Error plotting chart. {e}")),
+        },
+        Err(e) => Err(log::warn!("Error plotting chart. {e}")),
+    }
 }
 
 #[get("/last_kline_time")]

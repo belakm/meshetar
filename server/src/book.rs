@@ -1,7 +1,7 @@
 use crate::{
     binance_client::BINANCE_CLIENT,
     database::DB_POOL,
-    formatting::timestamp_to_string,
+    formatting::{timestamp_to_dt, timestamp_to_string},
     meshetar::Meshetar,
     prediction_model::{self, TradeSignal},
     TaskControl,
@@ -11,6 +11,7 @@ use binance_spot_connector_rust::{
     market_stream::kline::KlineStream,
     tokio_tungstenite::BinanceWebSocketClient,
 };
+use chrono::{DateTime, Utc};
 use futures::StreamExt; // needed for websocket to binance
 use rocket::futures::TryFutureExt;
 use serde::Deserialize;
@@ -343,4 +344,44 @@ pub async fn fetch_history(
         }
     }
     Ok(())
+}
+
+#[derive(sqlx::FromRow)]
+struct SimpleKline {
+    open_time: i64,
+    open: f32,
+    high: f32,
+    low: f32,
+    close: f32,
+}
+
+pub async fn plot_data(
+    pair: String,
+    interval: String,
+) -> Result<Vec<(DateTime<Utc>, (f32, f32, f32, f32))>, String> {
+    let connection = DB_POOL.get().unwrap();
+    let klines: Vec<SimpleKline> = sqlx::query_as::<_, SimpleKline>(
+        "SELECT open_time, open, high, low, close 
+        FROM klines 
+        WHERE interval = ?1 AND symbol = ?2 
+        ORDER BY open_time DESC 
+        LIMIT 100",
+    )
+    .bind(interval)
+    .bind(pair)
+    .fetch_all(connection)
+    .await
+    .map_err(|e| format!("Error fetching last kline. {:?}", e))?;
+
+    let rows: Vec<(DateTime<Utc>, (f32, f32, f32, f32))> = klines
+        .into_iter()
+        .map(|kline| {
+            (
+                timestamp_to_dt(kline.open_time / 1000),
+                (kline.open, kline.high, kline.low, kline.close),
+            )
+        })
+        .collect();
+
+    Ok(rows)
 }
