@@ -25,12 +25,12 @@ pub async fn plot_chart(
         filled: true,
         stroke_width: 1,
     };
-    let gain_style = ShapeStyle {
+    let lose_style = ShapeStyle {
         color: GREEN.mix(1f64),
         filled: true,
         stroke_width: 1,
     };
-    let lose_style = ShapeStyle {
+    let gain_style = ShapeStyle {
         color: RED.mix(1f64),
         filled: false,
         stroke_width: 2,
@@ -52,8 +52,8 @@ pub async fn plot_chart(
     let root_area = root_area.margin(10, 10, 10, 10);
 
     let (from_date, to_date) = (
-        *&data[0].0 - Duration::minutes(1),
-        *&data[*&data.len() - 1].0 + Duration::minutes(1),
+        *&data[0].0 - Duration::minutes(10),
+        *&data[*&data.len() - 1].0 + Duration::minutes(10),
     );
 
     let mut chart = ChartBuilder::on(&root_area)
