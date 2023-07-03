@@ -1,7 +1,7 @@
 # 🫰 MESHETAR
 
-An algotrading system to be.
-Currently supports fetching history + predicting signals with R. 
+An algotrading system to be. Currently supports fetching history + predicting signals with R. 
+
 Features a server running on 🚀 Rocket and an app build with 🍁 Sycamore.
 
 ## How to run
