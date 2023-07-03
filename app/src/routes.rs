@@ -14,6 +14,12 @@ async fn parse_status(payload: Response) -> Result<Meshetar, String> {
         Err(e) => Err(e.to_string()),
     }
 }
+async fn parse_response_string(payload: Response) -> Result<String, String> {
+    match payload.text().await {
+        Ok(payload) => Ok(payload),
+        Err(e) => Err(e.to_string()),
+    }
+}
 
 pub async fn get_status() -> Result<Meshetar, String> {
     let resp = reqwest::get("http://localhost:8000/status").await;
@@ -88,6 +94,18 @@ pub async fn run() -> Result<Meshetar, String> {
             Ok(meshetar)
         }
         Err(e) => Err(e.to_string()),
+    }
+}
+
+pub async fn plot_chart() -> Result<String, String> {
+    let resp = reqwest::get("http://localhost:8000/plot_chart").await;
+    match resp {
+        Ok(resp) => {
+            let resp = parse_response_string(resp).await?;
+            println!("{}", resp);
+            Ok(resp)
+        }
+        Err(e) => Err(format!("{}", e)),
     }
 }
 

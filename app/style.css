@@ -48,10 +48,13 @@ body > main > article {
   margin-top: 0;
 }
 
-header {  
-  display: flex;
-  flex-direction: row;
-  justify-content: center;
+body > header {  
+  padding-top: calc(var(--block-spacing-vertical) / 2);
+  padding-bottom: 0;
+}
+body > header > h1 {
+  text-align: center;
+  margin-bottom: calc(var(--block-spacing-vertical) / 2)
 }
 
 header h1 {
@@ -63,4 +66,29 @@ header h1 {
   padding: .1em;
   border-radius: 8%;
   background: var(--blockquote-border-color);
+}
+
+.status-label {
+  background: var(--background-color);
+  font-weight: bold;
+  padding: calc(var(--spacing) / 4);
+  border-radius: var(--border-radius);
+}
+
+.status-Idle .status-label {
+  font-weight: normal;
+}
+.status-Stopping .status-label {
+  color: red;
+}
+.status-Running .status-label {
+  color: green;
+}
+.status-FetchingHistory .status-label {
+  color: yellow;
+}
+
+.chart-container {
+  border-radius: var(--border-radius);
+  overflow: hidden;
 }

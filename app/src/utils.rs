@@ -4,6 +4,10 @@ pub fn console_log(str_to_log: &str) {
     web_sys::console::log_1(&str_to_log.to_string().into())
 }
 
+pub fn get_timestamp() -> i64 {
+    chrono::Utc::now().timestamp()
+}
+
 pub fn readable_date(epoch: &str) -> String {
     match epoch.parse::<i64>() {
         Ok(epoch) => {

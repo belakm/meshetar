@@ -185,7 +185,7 @@ async fn fetch_history(
     let reciever = Arc::clone(&task_control.inner());
 
     tokio::spawn(async move {
-        let fetch_start = (chrono::Utc::now() - chrono::Duration::days(100)).timestamp();
+        let fetch_start = (chrono::Utc::now() - chrono::Duration::days(1)).timestamp();
         match book::fetch_history(reciever, meshetar_clone2, fetch_start).await {
             Ok(_) => log::info!("History fetching success."),
             Err(e) => log::info!("History fetching err: {:?}", e),
@@ -235,10 +235,10 @@ async fn meshetar_status(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Jso
 async fn plot_chart(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Result<String, ()> {
     let meshetar = meshetar.lock().await;
     let pair = meshetar.pair.to_string();
-    let interval = "1m".to_string(); // TODO: meshetar.interval.to_string();
+    let interval = meshetar.interval.to_kline_interval().to_string();
     drop(meshetar);
     match book::plot_data(pair, interval).await {
-        Ok(data) => match plot::plot_chart(data).await {
+        Ok((data, signal_data)) => match plot::plot_chart(data, signal_data).await {
             Ok(path) => Ok(path),
             Err(e) => Err(log::warn!("Error plotting chart. {e}")),
         },

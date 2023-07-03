@@ -1,11 +1,13 @@
-use crate::routes::{self, change_interval, change_pair, fetch_last_kline_time, get_status};
+use crate::routes::{
+    self, change_interval, change_pair, fetch_last_kline_time, get_status, plot_chart,
+};
 use crate::store::Store;
 use crate::store_models::{Interval, Meshetar, Pair, Status};
-use crate::utils::{console_log, readable_date};
+use crate::utils::{console_log, get_timestamp, readable_date};
 use gloo_timers::future::TimeoutFuture;
 use sycamore::futures::spawn_local_scoped;
 use sycamore::prelude::{Html, Scope};
-use sycamore::reactive::{create_rc_signal, provide_context};
+use sycamore::reactive::{create_effect, create_rc_signal, create_signal, provide_context};
 use sycamore::view::View;
 use sycamore::{component, view};
 
@@ -14,6 +16,15 @@ fn sync_store(store: &Store, meshetar: Meshetar) {
     store.pair.set(meshetar.pair.to_string());
     store.interval.set(meshetar.interval.to_string());
     store.mode.set(meshetar.status.to_string());
+}
+
+#[component]
+pub fn Divider<'a, G: Html>(cx: Scope<'a>) -> View<G> {
+    view! { cx,
+        div {
+            hr(style="margin: calc(2*var(--spacing)) 0; margin-top: var(--spacing);") {}
+        }
+    }
 }
 
 #[component]
@@ -28,6 +39,29 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
     };
     let store = provide_context(cx, store);
 
+    // For handling chart versioning
+    let chart_path = create_signal(cx, String::from(""));
+
+    // For handling states
+    let is_normally_disabled = create_signal(cx, *store.server_state.get() != Status::Idle);
+    let is_stop_disabled = create_signal(
+        cx,
+        *store.server_state.get() == Status::Idle || *store.server_state.get() == Status::Stopping,
+    );
+    let meshetar_state_style = create_signal(cx, "idle".to_string());
+    create_effect(cx, || {
+        is_normally_disabled.set(*store.server_state.get() != Status::Idle);
+        is_stop_disabled.set(
+            *store.server_state.get() == Status::Idle
+                || *store.server_state.get() == Status::Stopping,
+        );
+    });
+    create_effect(cx, || {
+        let class_string = *store.server_state.get();
+        let class_string = format!("status-{}", class_string.to_string());
+        meshetar_state_style.set(class_string);
+    });
+
     spawn_local_scoped(cx, async move {
         loop {
             match get_status().await {
@@ -38,6 +72,10 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                 Ok(last_kline_time) => {
                     store.last_kline_time.set(last_kline_time);
                 }
+                _ => (),
+            }
+            match plot_chart().await {
+                Ok(path) => chart_path.set(path),
                 _ => (),
             }
             TimeoutFuture::new(3000).await;
@@ -109,23 +147,27 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
             }
         });
     };
+
     view! {cx,
-        header(class="container") {
+        header(class=format!("container {}", *meshetar_state_style.get())) {
             h1 {
                 span(class="title-icon") {
                     "🫰"
                 }
                 " MESHETAR"
             }
-        }
-        main(class="container") {
-            article {
+            div(class="grid") {
                 p {
-                    strong {"Current status: "} (store.mode)
+                    strong {"Current status: "}
+                    span(class="status-label", aria-busy=*is_normally_disabled.get()) { (store.mode) }
                 }
                 p {
                     strong {"Last kline time: "} (readable_date(&store.last_kline_time.get()))
                 }
+            }
+        }
+        main(class=format!("container {}", *meshetar_state_style.get())) {
+            article {
                 div(class="grid") {
                     select(bind:value=store.pair, on:change=handle_change_pair) {
                         option {
@@ -145,29 +187,26 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                     }
                 }
                 div(class="grid") {
-                    button(class="secondary", on:click=fetch_history, disabled=*store.server_state.get() != Status::Idle) {
+                    button(class="secondary", on:click=fetch_history, disabled=*is_normally_disabled.get()) {
                         "📥 Fetch history"
                     }
-                    button(class="secondary", on:click=clear_history, disabled=*store.server_state.get() != Status::Idle) {
+                    button(class="secondary", on:click=clear_history, disabled=*is_normally_disabled.get()) {
                         "🧹 Clear history"
                     }
                 }
-                div {
-                    hr(style="margin: calc(2*var(--spacing)) 0; margin-top: var(--spacing);") {}
-                }
                 div(class="grid") {
-                    button(on:click=run, disabled=*store.server_state.get() != Status::Idle) {
+                    button(on:click=run, disabled=*is_normally_disabled.get()) {
                         "▶️ START"
                     }
-                    button(on:click=stop, disabled=*store.server_state.get() == Status::Idle) {
+                    button(on:click=stop, disabled=*is_stop_disabled.get()) {
                         "⏹︎ STOP"
                     }
                 }
-                div(class="grid") {
-
+                Divider{}
+                div(class="chart-container") {
+                    img(src=format!("http://localhost:8000/{}?ver={}", *chart_path.get(), get_timestamp()))
                 }
             }
-            // img(style="width: 100%;", src=format!("http://localhost:8000/plot/account_balance_history?timestamp={}", props.state.get()))
         }
     }
 }
