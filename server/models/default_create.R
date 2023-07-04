@@ -1,6 +1,6 @@
 pacman::p_load(RSQLite, TTR, quantmod, xgboost,ROCR, Information, PerformanceAnalytics, rpart, randomForest, caret, tidyverse, here)
 
-here::i_am("server/models/default_create.R")
+here::i_am("models/default_create.R")
 
 # Connect to the SQLite database
 conn <- dbConnect(RSQLite::SQLite(), "database.sqlite")
@@ -12,11 +12,14 @@ data <- dbGetQuery(conn, query)
 # Exclude any rows that contain NA, NaN, or Inf values
 data <- data[complete.cases(data), ]
 
-# create an xts object for technical analysis (TTR lib)
-candles_df <- as.xts(data) |> suppressWarnings()
+# Convert 'open_time' from milliseconds since the epoch to a date-time object
+data$open_time <- as.POSIXct(data$open_time / 1000, origin="1970-01-01", tz="UTC")
 
-source(paste0(here::here(), "/server/models/funs/optimal_trading_signal.R"))
-source(paste0(here::here(), "/server/models/funs/add_ta.R"))
+# Create an xts object for technical analysis (TTR lib)
+candles_df <- xts(data[,-which(names(data) %in% "open_time")], order.by=data$open_time)
+
+source(paste0(here::here(), "/models/functions/optimal_trading_signal.R"))
+source(paste0(here::here(), "/models/functions/add_ta.R"))
 
 # Find the target (optimal signal)
 optimal_signal_params <- optimal_trading_signal(candles_df, max_holding_period = 8*60) # 4 hours maximum possible hold
@@ -137,10 +140,8 @@ if(all(test$signal == 0)){
   model$optimal_cutoff <- optimal_cutoff <- pROC::coords(pred, "best", ret = "threshold", input.sort = FALSE)
 }
 
-
-
 # Save the trained model to a file
-saveRDS(model, "server/models/prediction_model.rds")
+saveRDS(model, "models/prediction_model.rds")
 
 # Disconnect from the database
 dbDisconnect(conn)

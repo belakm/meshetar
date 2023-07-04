@@ -8,39 +8,45 @@ optimal_trading_signal <- function(binance_kline,
   
   create_signals <- function(holding_period){
     # Calculate the rate of change (ROC) based on the price data
+    binance_kline$open <- as.numeric(as.character(binance_kline$openm))
+    binance_kline$high <- as.numeric(as.character(binance_kline$high))
+    binance_kline$low <- as.numeric(as.character(binance_kline$low))
+    binance_kline$close <- as.numeric(as.character(binance_kline$close))
+    binance_kline$volume <- as.numeric(as.character(binance_kline$volume))
+   
+print("0")
+
     roc <- diff(log(binance_kline$close))
     roc[is.na(roc)] <- 0
+
+    print("1")
     
     # Calculate the returns based on the holding period
     returns <- c(rep(0, length(roc)))
+
+    print("2")
     
     if(holding_period == 1){
       returns <- roc
     } else{
-      for (i in 2:length(returns)) {
-        if (i < holding_period) {
+      for (i in holding_period:length(returns)) {
+        if (i <= holding_period) {
           returns[i] <- sum(roc[2:i])
         } else {
-          returns[i] <- sum(roc[(i-holding_period):(i
+          returns[i] <- sum(roc[(i-holding_period+1):(i
                                                     )]) 
         }
       }
     }
+
+    print("3")
     
     # Create a vector to store the trading signals
     signals <- rep(0, length(returns))
     
     ## Calculate the optimal buying, holding, and selling signals
     # sell when the returns were the highest
-    for (i in holding_period:(length(returns) - holding_period)) {
-      # if (returns[i] > (buy_threshold + fee_rate) && sum(signals[(i-holding_period):i]) < 1) {
-      #   signals[i] <- 1 # Buy signal
-      # } else if (returns[i] < (sell_threshold + fee_rate) && sum(signals[(i-holding_period+1):i]) == 1) {
-      #   signals[i] <- -1 # Sell signal
-      # } else {
-      #   signals[i] <- 0 # Hold signal
-      # }
-      
+    for (i in (2*holding_period):(length(returns))) {
       # sell when return was above fee + min_profit
       if(returns[i] > (buy_threshold + fee_rate)) {
           signals[i] <- -1  
@@ -58,8 +64,7 @@ optimal_trading_signal <- function(binance_kline,
       } else if (signals[i] == -1) {
         actual_returns[i] <- returns[i] - fee_rate*returns[i]
       }
-    }
-    
+    }    
     
     # Calculate the cumulative returns
     cumulative_returns <- cumsum(actual_returns)

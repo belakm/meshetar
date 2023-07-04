@@ -8,7 +8,7 @@ install.packages("renv")
 renv::init()
 
 # Install the packages required by your script
-renv::install(c("RSQLite", "cpp11", "glue", "lifecycle", "memoise", "pkgconfig", "rlang"))
+renv::install(c("RSQLite", "cpp11", "glue", "lifecycle", "memoise", "pkgconfig", "rlang", "pacman"))
 
 # Save a snapshot of the current environment to renv.lock
 renv::snapshot()
