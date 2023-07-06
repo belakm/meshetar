@@ -7,6 +7,7 @@ mod formatting;
 mod load_config;
 mod meshetar;
 mod plot;
+mod portfolio;
 mod prediction_model;
 mod rlang_runner;
 
