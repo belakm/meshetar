@@ -1,23 +1,23 @@
-use std::collections::HashMap;
+use sycamore::reactive::RcSignal;
 
-use crate::store_models::{Asset, Portfolio, ServerStatus};
+use crate::store_models::Status;
 
+#[derive(Debug, Default, Clone)]
 pub struct Store {
-    pub portfolio: Portfolio,
-    pub assets: HashMap<String, Asset>,
-    pub server_status: ServerStatus,
+    pub message: RcSignal<String>,
+    pub pair: RcSignal<String>,
+    pub mode: RcSignal<String>,
+    pub interval: RcSignal<String>,
+    pub server_state: RcSignal<Status>,
+    pub last_kline_time: RcSignal<String>,
 }
 
 impl Store {
-    pub fn new() -> Self {
-        Self {
-            portfolio: Portfolio {
-                assets: HashMap::new(),
-                btc_value: 0,
-                usd_value: 0,
-            },
-            assets: HashMap::new(),
-            server_status: ServerStatus::Unreachable,
-        }
-    }
+    /*fn start_operation(&self) {
+        self.todos.modify().push(create_rc_signal(Todo {
+            title,
+            completed: false,
+            id: Uuid::new_v4(),
+        }))
+    }*/
 }

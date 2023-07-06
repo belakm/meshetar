@@ -1,85 +1,71 @@
-use std::marker::PhantomData;
+use binance_spot_connector_rust::market::klines::KlineInterval;
+use rocket::serde::{json::Json, Serialize};
+use strum::{Display, EnumString};
 
-use crate::rlang_runner::r_script;
-
-// Valid states
-//
-pub struct New;
-pub struct Initialization;
-pub struct Idle;
-pub struct Running;
-pub struct CriticalError;
-
-#[derive(Copy, Clone)]
-pub enum Pair {
-    USDTBTC,
-    //USDTETH,
+#[derive(Copy, Clone, Debug, Serialize, PartialEq)]
+pub enum MeshetarStatus {
+    Idle,
+    Stopping,
+    FetchingHistory,
+    Running,
 }
 
-pub trait Summary {
-    fn summerize(&self) -> String {
-        "SUS! Nothing here ...".into()
+#[derive(Copy, Clone, Debug, Serialize, Display, EnumString)]
+pub enum Pair {
+    BTCUSDT,
+    ETHBTC,
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Display, EnumString)]
+pub enum Interval {
+    Minutes1,
+    Minutes3,
+}
+
+impl Interval {
+    pub fn to_kline_interval(&self) -> KlineInterval {
+        match self {
+            Interval::Minutes1 => KlineInterval::Minutes1,
+            Interval::Minutes3 => KlineInterval::Minutes3,
+        }
     }
 }
 
 // Core struct
 //
-pub struct Meshetar<State> {
-    pub message_log: Vec<String>,
-    pub selected_pair: Pair,
-    state: PhantomData<State>,
+#[derive(Serialize, Copy, Clone)]
+#[serde(crate = "rocket::serde")]
+pub struct Meshetar {
+    pub pair: Pair,
+    pub interval: Interval,
+    pub status: MeshetarStatus,
 }
 
-impl<T> Summary for Meshetar<T> {
-    fn summerize(&self) -> String {
-        match self.message_log.last() {
-            Some(message) => message.clone().to_string(),
-            None => String::from("No message."),
+impl Meshetar {
+    pub fn new() -> Self {
+        Meshetar {
+            interval: Interval::Minutes1,
+            pair: Pair::BTCUSDT,
+            status: MeshetarStatus::Idle,
         }
     }
-}
-
-// State implementations
-//
-impl Meshetar<New> {
-    pub fn new() -> Meshetar<Initialization> {
-        Meshetar::<Initialization> {
-            message_log: Vec::new(),
-            selected_pair: Pair::USDTBTC,
-            state: PhantomData,
+    pub fn change_pair(&mut self, pair: Pair) -> Result<&mut Self, String> {
+        if self.status == MeshetarStatus::Idle {
+            Err(String::from("Cant change pair while working."))
+        } else {
+            self.pair = pair;
+            Ok(self)
         }
     }
-}
-impl Meshetar<Initialization> {
-    pub async fn initialize(self) -> Result<Meshetar<Idle>, Meshetar<CriticalError>> {
-        // Create new log
-        let mut message_log: Vec<String> = Vec::new();
-        message_log.push("Starting initialization.".into());
-
-        // Install R dependencies - we cant do much without them
-        //
-        match r_script("renv_install.R", None) {
-            // Initialize our database
-            //
-            Ok(_) => Ok(Meshetar::<Idle> {
-                selected_pair: Pair::USDTBTC,
-                message_log: {
-                    message_log.push("Database Inititiated".to_string());
-                    message_log
-                },
-                state: PhantomData,
-            }),
-            Err(e) => Err(Meshetar::<CriticalError> {
-                selected_pair: Pair::USDTBTC,
-                message_log: {
-                    message_log.push(e);
-                    message_log
-                },
-                state: PhantomData,
-            }),
+    pub fn change_interval(&mut self, interval: Interval) -> Result<&mut Self, String> {
+        if self.status == MeshetarStatus::Idle {
+            Err(String::from("Cant change interval while working."))
+        } else {
+            self.interval = interval;
+            Ok(self)
         }
     }
+    pub fn summerize_json(self) -> Json<Meshetar> {
+        Json(self)
+    }
 }
-impl Meshetar<Idle> {}
-impl Meshetar<CriticalError> {}
-impl Meshetar<Running> {}

@@ -1,26 +1,30 @@
-use std::collections::HashMap;
+use serde::Deserialize;
+use strum::{Display, EnumString};
 
-pub struct PortfolioAsset {
-    symbol: String,
-    btc_value: i64,
-}
-
-pub struct Portfolio {
-    assets: HashMap<String, PortfolioAsset>,
-    btc_value: i64,
-    usd_value: i64,
-}
-
-pub struct Kline {
-    // TODO
-}
-
-pub struct Asset {
-    symbol: String,
-    history: Vec<Kline>,
-}
-
-pub enum ServerStatus {
+#[derive(Debug, Deserialize, Display, Default, Copy, Clone, Eq, PartialEq)]
+pub enum Status {
+    #[default]
+    Idle,
+    Stopping,
+    FetchingHistory,
     Running,
-    Unreachable,
+}
+
+#[derive(Debug, Deserialize, Display, EnumString)]
+pub enum Pair {
+    BTCUSDT,
+    ETHBTC,
+}
+
+#[derive(Debug, Deserialize, Display, EnumString)]
+pub enum Interval {
+    Minutes1,
+    Minutes3,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Meshetar {
+    pub pair: Pair,
+    pub interval: Interval,
+    pub status: Status,
 }

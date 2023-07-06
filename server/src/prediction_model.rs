@@ -1,6 +1,8 @@
+use strum::{Display, EnumString};
+
 use crate::rlang_runner;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, Display, EnumString)]
 pub enum TradeSignal {
     Hold,
     Buy,
