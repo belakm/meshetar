@@ -1,6 +1,6 @@
-pacman::p_load(RSQLite, TTR, quantmod, xgboost,ROCR, Information, PerformanceAnalytics, rpart, randomForest, caret, tidyverse, here)
+pacman::p_load(RSQLite, TTR, quantmod, xgboost,ROCR, Information, PerformanceAnalytics, rpart, randomForest, caret, dplyr, magrittr, here)
 
-here::i_am("models/default_create.R")
+  here::i_am("models/default_create.R")
 
 # Connect to the SQLite database
 conn <- dbConnect(RSQLite::SQLite(), "database.sqlite")
@@ -9,14 +9,25 @@ conn <- dbConnect(RSQLite::SQLite(), "database.sqlite")
 query <- "SELECT * FROM klines WHERE symbol = 'BTCUSDT' ORDER BY open_time ASC"
 data <- dbGetQuery(conn, query)
 
+# Disconnect from the database
+dbDisconnect(conn)
+
+# Calculate the rate of change (ROC) based on the price data
+data$open <- as.numeric(as.character(data$open))
+data$high <- as.numeric(as.character(data$high))
+data$low <- as.numeric(as.character(data$low))
+data$close <- as.numeric(as.character(data$close))
+data$volume <- as.numeric(as.character(data$volume))
+
 # Exclude any rows that contain NA, NaN, or Inf values
 data <- data[complete.cases(data), ]
 
 # Convert 'open_time' from milliseconds since the epoch to a date-time object
-data$open_time <- as.POSIXct(data$open_time / 1000, origin="1970-01-01", tz="UTC")
+# data$open_time <- as.POSIXct(data$open_time / 1000, origin="1970-01-01", tz="UTC")
 
 # Create an xts object for technical analysis (TTR lib)
-candles_df <- xts(data[,-which(names(data) %in% "open_time")], order.by=data$open_time)
+# candles_df <- as.xts(data) |> suppressWarnings()
+candles_df <- data
 
 source(paste0(here::here(), "/models/functions/optimal_trading_signal.R"))
 source(paste0(here::here(), "/models/functions/add_ta.R"))
@@ -29,10 +40,10 @@ signal <- optimal_signal_params$signals
 tech_ind <- add_ta(candles_df = candles_df)
 
 # Find the number of omitted cases due to MA calculations due to lags
-how_many_ommited <- sum(!complete.cases(cbind(signal, tech_ind)))
+how_many_ommited <- sum(!complete.cases(cbind(signal, tech_ind[-1,])))
 
 # create a modelling dataframe
-signal_with_TA <- cbind(signal, tech_ind)
+signal_with_TA <- cbind(signal, tech_ind[-1])
 
 # We are interested in buy signals only (optimal holding time is fixed)
 signal_with_TA$signal <- ifelse(signal_with_TA$signal == -1, 0, signal_with_TA$signal)
@@ -44,6 +55,12 @@ train <- signal_with_TA[train_index,]
 #####################################################################
 ####  XGboost model for feature importance and feature selection ####
 #####################################################################
+xgb_train <- xgb.DMatrix(data = as.matrix(train[,-1]), 
+                         label = train$signal) 
+
+# Do we really need xgb test?
+# xgb_test <- xgb.DMatrix(data = as.matrix(test[,-1]),
+#                     label = test$signal) #100 observations
 
 # Set a seed for reproducibility
 set.seed(123)
@@ -102,17 +119,17 @@ options(scipen = 3)
 importance <- importance[order(importance$Gain, decreasing = TRUE), ]
 
 # Feature selection
-important_train <- train[, c("signal", 
-                             importance$Feature[which(cv_results$error_rate > median(cv_results$error_rate))])]
+# important_train <- train[, c("signal", 
+#                              importance$Feature[which(cv_results$error_rate > median(cv_results$error_rate))])]
 
-features_to_remove <- caret::findCorrelation(
-  cor(important_train)
-)
-
-reduced_important_train <- important_train[, -features_to_remove]
+# features_to_remove <- caret::findCorrelation(
+#   cor(important_train)
+# )
+# 
+# reduced_important_train <- important_train[, -features_to_remove]
 
 #for the model i will be using features above median of cross validation error rate
-formula_str <- paste("signal ~",paste(colnames(reduced_important_train[,-1]), collapse = " + "))
+formula_str <- paste("signal ~",paste(colnames(train[,-1]), collapse = " + "))
 model_formula  <- as.formula(formula_str)
 
 model <- glm(formula = model_formula ,
@@ -143,5 +160,4 @@ if(all(test$signal == 0)){
 # Save the trained model to a file
 saveRDS(model, "models/prediction_model.rds")
 
-# Disconnect from the database
-dbDisconnect(conn)
+

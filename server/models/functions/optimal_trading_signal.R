@@ -7,25 +7,20 @@ optimal_trading_signal <- function(binance_kline,
   # First create a function for i in max_holding period (function to optimize)
   
   create_signals <- function(holding_period){
+
     # Calculate the rate of change (ROC) based on the price data
-    binance_kline$open <- as.numeric(as.character(binance_kline$openm))
+    binance_kline$open <- as.numeric(as.character(binance_kline$open))
     binance_kline$high <- as.numeric(as.character(binance_kline$high))
     binance_kline$low <- as.numeric(as.character(binance_kline$low))
     binance_kline$close <- as.numeric(as.character(binance_kline$close))
     binance_kline$volume <- as.numeric(as.character(binance_kline$volume))
-   
-print("0")
 
-    roc <- diff(log(binance_kline$close))
+    roc <- diff(log(as.numeric(as.character(binance_kline$close))))
     roc[is.na(roc)] <- 0
 
-    print("1")
-    
     # Calculate the returns based on the holding period
     returns <- c(rep(0, length(roc)))
 
-    print("2")
-    
     if(holding_period == 1){
       returns <- roc
     } else{
@@ -39,8 +34,6 @@ print("0")
       }
     }
 
-    print("3")
-    
     # Create a vector to store the trading signals
     signals <- rep(0, length(returns))
     
@@ -98,3 +91,4 @@ print("0")
   return(optimal_signals_with_optimal_hodl)  
 
 }
+
