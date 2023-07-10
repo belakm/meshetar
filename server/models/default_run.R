@@ -8,7 +8,7 @@ conn <- dbConnect(RSQLite::SQLite(), "database.sqlite")
 model <- readRDS("models/prediction_model.rds")
 
 # Query the klines table and retrieve the latest data for the chosen crypto pair
-query <- "SELECT * FROM klines WHERE symbol = 'BTCUSDT' ORDER BY open_time DESC LIMIT 50"
+query <- "SELECT * FROM klines WHERE symbol = 'BTCUSDT' ORDER BY open_time DESC LIMIT 1"
 data <- dbGetQuery(conn, query)
 # Disconnect from the database
 dbDisconnect(conn)

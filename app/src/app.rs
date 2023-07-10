@@ -131,6 +131,14 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
             }
         });
     };
+    let create_new_model = move |_| {
+        spawn_local_scoped(cx, async move {
+            match routes::create_new_model().await {
+                Ok(meshetar) => sync_store(store, meshetar),
+                _ => (),
+            }
+        });
+    };
     let stop = move |_| {
         spawn_local_scoped(cx, async move {
             match routes::stop().await {
@@ -192,6 +200,9 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                     }
                     button(class="secondary", on:click=clear_history, disabled=*is_normally_disabled.get()) {
                         "🧹 Clear history"
+                    }
+                    button(class="secondary", on:click=create_new_model, disabled=*is_normally_disabled.get()) {
+                        "🪩 Create new model"
                     }
                 }
                 div(class="grid") {

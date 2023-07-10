@@ -7,6 +7,7 @@ pub enum MeshetarStatus {
     Idle,
     Stopping,
     FetchingHistory,
+    CreatingNewModel,
     Running,
 }
 

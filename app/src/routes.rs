@@ -109,10 +109,10 @@ pub async fn plot_chart() -> Result<String, String> {
     }
 }
 
-pub async fn create_model() -> Result<Meshetar, String> {
+pub async fn create_new_model() -> Result<Meshetar, String> {
     let client = reqwest::Client::new();
     let resp = client
-        .post("http://localhost:8000/create_model")
+        .post("http://localhost:8000/create_new_model")
         .send()
         .await;
     match resp {

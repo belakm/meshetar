@@ -1,6 +1,9 @@
-use strum::{Display, EnumString};
+use std::sync::Arc;
 
-use crate::rlang_runner;
+use strum::{Display, EnumString};
+use tokio::sync::Mutex;
+
+use crate::{rlang_runner, TaskControl};
 
 #[derive(Debug, Copy, Clone, Display, EnumString)]
 pub enum TradeSignal {
@@ -9,31 +12,24 @@ pub enum TradeSignal {
     Sell,
 }
 
-pub async fn run() -> Result<TradeSignal, String> {
-    println!("Creating new model.");
-    match create().await {
-        Ok(_) => {
-            println!("Running new model.");
-            match rlang_runner::r_script("models/default_run.R", None) {
-                Ok(signal) => match &signal[..] {
-                    "buy" => Ok(TradeSignal::Buy),
-                    "sell" => Ok(TradeSignal::Sell),
-                    "hold" => Ok(TradeSignal::Hold),
-                    _ => {
-                        println!("Model runner encountered unexpected signal: {:?}", &signal);
-                        Ok(TradeSignal::Hold)
-                    }
-                },
-                Err(e) => Err(e),
-            }
-        }
+pub async fn run_model(task_control: Arc<Mutex<TaskControl>>) -> Result<TradeSignal, String> {
+    match rlang_runner::run_script("models/default_run.R", task_control).await {
+        Ok(signal) => match signal.as_str() {
+            "buy" => Ok(TradeSignal::Buy),
+            "sell" => Ok(TradeSignal::Sell),
+            "hold" => Ok(TradeSignal::Hold),
+            _ => Err(format!(
+                "Model runner encountered unexpected signal: {:?}",
+                &signal
+            )),
+        },
         Err(e) => Err(e),
     }
 }
 
-async fn create() -> Result<(), String> {
-    match rlang_runner::r_script("models/default_create.R", None) {
+pub async fn create_model(task_control: Arc<Mutex<TaskControl>>) -> Result<(), String> {
+    match rlang_runner::run_script("models/default_create.R", task_control).await {
         Ok(_) => Ok(()),
-        Err(e) => Err(e),
+        Err(e) => Err(format!("{:?}", e)),
     }
 }

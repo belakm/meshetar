@@ -7,7 +7,7 @@ mod formatting;
 mod load_config;
 mod meshetar;
 mod plot;
-mod portfolio;
+// mod portfolio;
 mod prediction_model;
 mod rlang_runner;
 
@@ -122,6 +122,7 @@ async fn main() -> Result<(), String> {
                 pair_put,
                 last_kline_time,
                 run,
+                create_new_model,
                 plot_chart
             ],
         )
@@ -166,6 +167,35 @@ async fn run(
     });
 
     let summary = meshetar_clone4.lock().await.summerize_json();
+    Accepted(Some(summary))
+}
+
+#[post("/create_new_model")]
+async fn create_new_model(
+    meshetar: &State<Arc<Mutex<Meshetar>>>,
+    task_control: &State<Arc<Mutex<TaskControl>>>,
+) -> Accepted<Json<Meshetar>> {
+    // Set state to running
+    let meshetar_clone = Arc::clone(&meshetar.inner());
+    meshetar_clone.lock().await.status = MeshetarStatus::CreatingNewModel;
+    drop(meshetar_clone);
+    // Set task control to running
+    &task_control.lock().await.sender.send(true);
+    let reciever = Arc::clone(&task_control.inner());
+
+    let meshetar_clone2 = Arc::clone(&meshetar.inner());
+    let meshetar_clone3 = Arc::clone(&meshetar.inner());
+    // Start running
+    tokio::spawn(async move {
+        match prediction_model::create_model(reciever).await {
+            Ok(_) => log::warn!("Created model successfully"),
+            Err(e) => log::error!("Creating model failed with error {}", e),
+        };
+        let mut meshetar_clone = meshetar_clone2.lock().await;
+        meshetar_clone.status = MeshetarStatus::Idle;
+    });
+
+    let summary = meshetar_clone3.lock().await.summerize_json();
     Accepted(Some(summary))
 }
 

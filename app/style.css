@@ -87,6 +87,9 @@ header h1 {
 .status-FetchingHistory .status-label {
   color: yellow;
 }
+.status-CreatingNewModel .status-label {
+  color: blue;
+}
 
 .chart-container {
   border-radius: var(--border-radius);

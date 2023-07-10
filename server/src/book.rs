@@ -131,7 +131,8 @@ pub async fn run(
                                 match insert_kline_to_database(connection, kline).await {
                                     Ok(_) => {
                                         drop(connection);
-                                        match prediction_model::run().await {
+                                        let task_control2 = Arc::clone(&task_control);
+                                        match prediction_model::run_model(task_control2).await {
                                             Ok(signal) => {
                                                 let connection = DB_POOL.get().unwrap();
                                                 match insert_signal_to_database(connection, signal, symbol.clone(), interval_string.clone(), time).await {

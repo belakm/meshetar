@@ -5,6 +5,7 @@
 /server/database.sqlite-journal
 /server/renv
 /server/models/prediction_model.rds
+/server/.Rhistory
 /app/config.toml
 /app/target
 /app/dist
