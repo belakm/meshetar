@@ -10,51 +10,46 @@ pub async fn run_script(
     task_control: Arc<Mutex<TaskControl>>,
 ) -> Result<String, String> {
     // Set the Rscript command and the path to the R script
-    let child_process = Command::new("Rscript")
+    let mut child_process = Command::new("Rscript")
         .arg(path_to_script)
-        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
+        .spawn()
+        .map_err(|e| format!("R err: {:?}", e))?;
 
-    match child_process {
-        Ok(mut child_process) => {
-            let mut receiver = task_control.lock().await.receiver.clone();
-            loop {
-                tokio::select! {
-                    _ = receiver.changed() => {
-                        if *receiver.borrow() == false {
-                            &child_process.kill().await;
-                            break Err("R Command: execution was stopped".to_owned())
-                        }
-                    }
-                    output = read_command_output(&mut child_process).fuse() => {
-                        break match output {
-                            Ok(output) => {
-                                Ok(output)
-                            },
-                            Err(e) => Err(format!("R err: {:?}", e))
-                        }
-                    }
+    let mut output = String::new();
+    let mut reader = if let Some(stdout) = child_process.stdout.take() {
+        Some(tokio::io::BufReader::new(stdout))
+    } else {
+        None
+    };
+
+    let mut receiver = task_control.lock().await.receiver.clone();
+    loop {
+        tokio::select! {
+            result = reader.as_mut().unwrap().read_to_string(&mut output).fuse() => {
+                result.map_err(|e| format!("Error parsing output: {:?}", e))?;
+            },
+            _ = receiver.changed() => {
+                if *receiver.borrow() == false {
+                    child_process.kill().await.map_err(|e| format!("Failed to stop command: {:?}", e))?;
+                    return Err("R Command: execution was stopped".to_owned())
                 }
             }
         }
-        Err(e) => Err(format!("R err: {:?}", e)),
-    }
-}
 
-pub async fn read_command_output(
-    child_process: &mut tokio::process::Child,
-) -> Result<String, String> {
-    let stdout = child_process.stdout.take();
-    match stdout {
-        Some(mut stdout) => {
-            let mut output = Vec::new();
-            match stdout.read_to_end(&mut output).await {
-                Ok(_) => Ok(String::from_utf8_lossy(&output).to_string()),
-                Err(e) => Err(format!("Error parsing output: {:?}", e)),
+        let exit_status = child_process
+            .try_wait()
+            .map_err(|e| format!("Failed to check child status: {:?}", e))?;
+
+        if let Some(exit_status) = exit_status {
+            if exit_status.success() {
+                return Ok(output);
+            } else {
+                return Err(format!(
+                    "R script returned with error status: {:?}",
+                    exit_status
+                ));
             }
         }
-        None => Err("R command: No output".to_string()),
     }
 }

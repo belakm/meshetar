@@ -1,6 +1,17 @@
-pacman::p_load(RSQLite, TTR, quantmod, xgboost,ROCR, Information, PerformanceAnalytics, rpart, randomForest, caret, dplyr, magrittr, here)
+library("RSQLite")
+library("TTR")
+library("quantmod")
+library("xgboost")
+library("ROCR")
+library("Information")
+library("PerformanceAnalytics")
+library("rpart")
+library("randomForest")
+library("dplyr")
+library("magrittr")
+library("here")
 
-  here::i_am("models/default_create.R")
+here::i_am("models/default_create.R")
 
 # Connect to the SQLite database
 conn <- dbConnect(RSQLite::SQLite(), "database.sqlite")
@@ -160,4 +171,4 @@ if(all(test$signal == 0)){
 # Save the trained model to a file
 saveRDS(model, "models/prediction_model.rds")
 
-
+cat("Model done")
