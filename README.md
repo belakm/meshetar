@@ -14,8 +14,9 @@ Features a server running on 🚀 Rocket and an app build with 🍁 Sycamore.
 
 #### App
 
-0. `cd` into `server`
+0. `cd` into `app`
 1. Run `trunk serve`
+2. App is served on `http://localhost:8080`
 
 ## Screenshot
 
