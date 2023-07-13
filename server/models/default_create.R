@@ -44,7 +44,7 @@ source(paste0(here::here(), "/models/functions/optimal_trading_signal.R"))
 source(paste0(here::here(), "/models/functions/add_ta.R"))
 
 # Find the target (optimal signal)
-optimal_signal_params <- optimal_trading_signal(candles_df, max_holding_period = 8*60) # 4 hours maximum possible hold
+optimal_signal_params <- optimal_trading_signal(candles_df, max_holding_period = 10*59) # 4 hours maximum possible hold
 signal <- optimal_signal_params$signals
 
 # Assign technical indicators to the candles

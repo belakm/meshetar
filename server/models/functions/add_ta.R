@@ -1,20 +1,8 @@
 library(TTR)
 
 add_ta <- function(candles_df){
-  
-  # Calculate the rate of change (ROC) based on the price data
-  # candles_df$open <- as.numeric(as.character(candles_df$open))
-  # candles_df$high <- as.numeric(as.character(candles_df$high))
-  # candles_df$low <- as.numeric(as.character(candles_df$low))
-  # candles_df$close <- as.numeric(as.character(candles_df$close))
-  # candles_df$volume <- as.numeric(as.character(candles_df$volume))
 
-  
   con_OHLC <- xts::as.xts(quantmod::OHLCV(candles_df))
-  
-
-
-
   close_price <- as.numeric(quantmod::Cl(con_OHLC)$close)
   
   sma <- TTR::SMA(close_price)
@@ -30,8 +18,8 @@ add_ta <- function(candles_df){
   true_high <- TTR::ATR(con_OHLC)[,'trueHigh']
   true_low <- TTR::ATR(con_OHLC)[,'trueLow']
   atr <- TTR::ATR(con_OHLC)[,'atr'] # True Range / Average True Range
-  # smi <- TTR::SMI(quantmod::HLC(con_OHLC))[,'SMI']
-  # smi_signal <- setNames(TTR::SMI(quantmod::HLC(con_OHLC))[,'signal'], "smi_signal")
+  smi <- TTR::SMI(quantmod::HLC(con_OHLC))[,'SMI']
+  smi_signal <- setNames(TTR::SMI(quantmod::HLC(con_OHLC))[,'signal'], "smi_signal")
   adx <- TTR::ADX(quantmod::HLC(con_OHLC))[,'ADX']
   adx_dip <- TTR::ADX(quantmod::HLC(con_OHLC))[,'DIp']
   adx_din <- TTR::ADX(quantmod::HLC(con_OHLC))[,'DIn']
@@ -40,8 +28,8 @@ add_ta <- function(candles_df){
   aroon_up <- TTR::aroon(con_OHLC[,c('high','low')])[,'aroonUp']
   aroon_dn <- TTR::aroon(con_OHLC[,c('high','low')])[,'aroonDn']
   chaikin_volatility <- setNames(quantmod::Delt(TTR::chaikinVolatility(con_OHLC[,c("high","low")]))[,1], "chaikin_volatility")
-  # emv <- TTR::EMV(cbind(con_OHLC[,c('high','low')]), candles_df[,'volume'])[,'emv']
-  # ma_emv <- setNames(as.xts(EMV(cbind(con_OHLC[,c('high','low')]), con[,'volume'])[,'maEMV']),nm =  "ma_emv")
+  emv <- TTR::EMV(cbind(con_OHLC[,c('high','low')]), candles_df[,'volume'])[,'emv']
+  ma_emv <- setNames(as.xts(EMV(cbind(con_OHLC[,c('high','low')]), con[,'volume'])[,'maEMV']),nm =  "ma_emv")
   mfi <- setNames(xts::as.xts(TTR::MFI(con_OHLC[,c("high","low","close")], candles_df[,'volume'])), "mfi")
   sar <- TTR::SAR(con_OHLC[,c('high','close')]) [,1] # Parabolic Stop-and-Reverse
   volat <- setNames(TTR::volatility(con_OHLC,calc="close"), "volat")
@@ -60,11 +48,11 @@ add_ta <- function(candles_df){
                    macd, 
                    macd_sig, 
                    rsi,
-                 #  tr, 
+                   tr, 
                    true_high, 
                    true_low, atr, 
-                   # smi, 
-                   # smi_signal, 
+                   smi, 
+                   smi_signal, 
                    adx, 
                    adx_dip,  
                    adx_din, 
@@ -73,8 +61,8 @@ add_ta <- function(candles_df){
                    aroon_up, 
                    aroon_dn, 
                    chaikin_volatility, 
-                   # emv, 
-                   # ma_emv, 
+                   emv, 
+                   ma_emv, 
                    mfi, 
                    sar, 
                    volat, 
