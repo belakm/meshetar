@@ -1,4 +1,8 @@
-pacman::p_load(RSQLite, TTR, xts, here)
+library(RSQLite) 
+library(TTR)
+library(xts)
+library(here)
+
 here::i_am("models/default_create.R")
 
 # Connect to the SQLite database
@@ -8,17 +12,17 @@ conn <- dbConnect(RSQLite::SQLite(), "database.sqlite")
 model <- readRDS("models/prediction_model.rds")
 
 # Query the klines table and retrieve the latest data for the chosen crypto pair
-query <- "SELECT * FROM klines WHERE symbol = 'BTCUSDT' ORDER BY open_time DESC LIMIT 1"
+query <- "SELECT * FROM klines WHERE symbol = 'BTCUSDT' ORDER BY open_time DESC LIMIT 51"
 data <- dbGetQuery(conn, query)
 # Disconnect from the database
 dbDisconnect(conn)
 
 # Calculate the rate of change (ROC) based on the price data
-data$open <- as.numeric(as.character(data$open))
-data$high <- as.numeric(as.character(data$high))
-data$low <- as.numeric(as.character(data$low))
-data$close <- as.numeric(as.character(data$close))
-data$volume <- as.numeric(as.character(data$volume))
+# data$open <- as.numeric(as.character(data$open))
+# data$high <- as.numeric(as.character(data$high))
+# data$low <- as.numeric(as.character(data$low))
+# data$close <- as.numeric(as.character(data$close))
+# data$volume <- as.numeric(as.character(data$volume))
 
 # Exclude any rows that contain NA, NaN, or Inf values
 data <- data[complete.cases(data), ]

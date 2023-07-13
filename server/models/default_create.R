@@ -10,6 +10,8 @@ library("randomForest")
 library("dplyr")
 library("magrittr")
 library("here")
+library("zoo")
+
 
 here::i_am("models/default_create.R")
 
@@ -24,6 +26,9 @@ data <- dbGetQuery(conn, query)
 dbDisconnect(conn)
 
 # Calculate the rate of change (ROC) based on the price data
+data$open_time <- as.POSIXct.numeric(as.numeric(data$open_time/1000), origin = "1970-01-01", tz = Sys.timezone())
+data$close_time <- as.POSIXct.numeric(as.numeric(data$close_time/1000), origin = "1970-01-01", tz = Sys.timezone())
+
 data$open <- as.numeric(as.character(data$open))
 data$high <- as.numeric(as.character(data$high))
 data$low <- as.numeric(as.character(data$low))
@@ -44,8 +49,8 @@ source(paste0(here::here(), "/models/functions/optimal_trading_signal.R"))
 source(paste0(here::here(), "/models/functions/add_ta.R"))
 
 # Find the target (optimal signal)
-optimal_signal_params <- optimal_trading_signal(candles_df, max_holding_period = 10*59) # 4 hours maximum possible hold
-signal <- optimal_signal_params$signals
+# optimal_signal_params <- optimal_trading_signal(candles_df, max_holding_period = 10*59) # 4 hours maximum possible hold
+# signal <- optimal_signal_params$signals
 
 # Assign technical indicators to the candles
 tech_ind <- add_ta(candles_df = candles_df)
