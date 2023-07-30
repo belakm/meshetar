@@ -21,7 +21,7 @@ struct IdRow {
     id: i64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct BalanceSnapshotItem {
     pub asset: String,
     #[serde(deserialize_with = "f64_from_string")]
@@ -30,14 +30,14 @@ pub struct BalanceSnapshotItem {
     pub locked: f64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct BalanceSnapshot {
     pub balances: Vec<BalanceSnapshotItem>,
     #[serde(rename = "totalAssetOfBtc", deserialize_with = "f64_from_string")]
     pub total_asset_of_btc: f64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Snapshot {
     pub data: BalanceSnapshot,
     #[serde(rename = "updateTime")]
@@ -145,7 +145,10 @@ struct QueryAccountHistory {
     msg: String,
 }
 
-pub async fn get_account_history_with_snapshots() -> Result<AccountHistory, String> {
+pub async fn get_portfolio_snapshots(limit: i32) -> Result<AccountHistory, String> {
+    if limit <= 0 {
+        return Err("Must request at least 1 snapshot.".to_string());
+    }
     let connection = DB_POOL.get().unwrap();
     let account_history: (i32, String) =
         sqlx::query_as("SELECT code, msg FROM account_history LIMIT 1")
@@ -159,12 +162,15 @@ pub async fn get_account_history_with_snapshots() -> Result<AccountHistory, Stri
         snapshots: Vec::new(),
     };
 
-    let snapshot_rows: Vec<(f64, i64, String, String, f64, f64)> = sqlx::query_as(r#"
+    let query = &format!("
        SELECT snapshots.id as snapshots.total_asset_of_btc, snapshots.update_time, snapshots.wallet_type, balances.asset, balances.free, balances.locked 
-        FROM snapshots        
+        FROM snapshots     
+        LIMIT {:?}
         INNER JOIN balances ON snapshots.id = balances.snapshot_id 
 	    WHERE free IS NOT 0
-    "#)
+    ", limit);
+
+    let snapshot_rows: Vec<(f64, i64, String, String, f64, f64)> = sqlx::query_as(query)
         .fetch_all(connection)
         .map_err(|e| format!("Error retrieving snapshots from database. {}", e))
         .await?;

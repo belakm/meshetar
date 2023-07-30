@@ -18,6 +18,7 @@ use meshetar::Interval;
 use meshetar::Meshetar;
 use meshetar::MeshetarStatus;
 use meshetar::Pair;
+use portfolio::Snapshot;
 use rocket::catch;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::form::Form;
@@ -99,7 +100,6 @@ async fn main() -> Result<(), String> {
     builder.filter(Some("sqlx"), LevelFilter::Warn);
     builder.init();
 
-    log::info!("Igniting rocket.");
     binance_client::initialize().await?;
     database::initialize().await?;
     let meshetar = Arc::new(Mutex::new(Meshetar::new()));
@@ -108,7 +108,6 @@ async fn main() -> Result<(), String> {
 
     tokio::spawn(async {
         loop {
-            log::info!("TICK");
             match portfolio::fetch_account_balance_history().await {
                 Err(e) => log::warn!("Error fetching portfolio: {:?}", e),
                 _ => (),
@@ -134,7 +133,8 @@ async fn main() -> Result<(), String> {
                 last_kline_time,
                 run,
                 create_new_model,
-                plot_chart
+                plot_chart,
+                wallet_status
             ],
         )
         .mount("/", FileServer::new("static", Options::None).rank(1))
@@ -264,6 +264,17 @@ async fn clear_history(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Json<
         };
     });
     Accepted(Some(meshetar.lock().await.summerize_json()))
+}
+
+#[get("/wallet_status")]
+async fn wallet_status() -> Result<Accepted<Json<Snapshot>>, Custom<String>> {
+    match portfolio::get_portfolio_snapshots(1).await {
+        Ok(account_history) => match account_history.snapshots.first() {
+            Some(snapshot) => Ok(Accepted(Some(Json(snapshot.clone())))),
+            None => Err(Custom(Status::NotFound, "No snapshots found".to_string())),
+        },
+        Err(e) => Err(Custom(Status::NotFound, format!("{:?}", e))),
+    }
 }
 
 #[get("/status")]
