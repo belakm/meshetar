@@ -3,7 +3,7 @@ use crate::{
     load_config::{self, Config},
 };
 use binance_spot_connector_rust::{http::Credentials, hyper::BinanceHttpClient, wallet};
-use chrono::Duration;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::TryFutureExt;
 use serde::{Deserialize, Deserializer, Serialize};
 use sqlx::FromRow;
@@ -16,186 +16,137 @@ where
     s.parse::<f64>().map_err(serde::de::Error::custom)
 }
 
-#[derive(FromRow)]
-struct IdRow {
+#[derive(Serialize, Deserialize, Debug)]
+struct ApiBalance {
+    #[serde(rename = "asset")]
+    symbol: String,
+    #[serde(deserialize_with = "f64_from_string")]
+    free: f64,
+    #[serde(deserialize_with = "f64_from_string")]
+    locked: f64,
+    #[serde(deserialize_with = "f64_from_string")]
+    freeze: f64,
+    #[serde(deserialize_with = "f64_from_string")]
+    withdrawing: f64,
+    #[serde(deserialize_with = "f64_from_string")]
+    ipoable: f64,
+    #[serde(deserialize_with = "f64_from_string", rename = "btcValuation")]
+    btc_valuation: f64,
+}
+
+#[derive(FromRow, Clone, Serialize)]
+pub struct Balance {
     id: i64,
+    symbol: String,
+    free: f64,
+    locked: f64,
+    freeze: f64,
+    withdrawing: f64,
+    ipoable: f64,
+    btc_valuation: f64,
+    balance_sheet_id: i64,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct BalanceSnapshotItem {
-    pub asset: String,
-    #[serde(deserialize_with = "f64_from_string")]
-    pub free: f64,
-    #[serde(deserialize_with = "f64_from_string")]
-    pub locked: f64,
+#[derive(FromRow, Clone, Serialize)]
+pub struct BalanceSheet {
+    id: i64,
+    timestamp: NaiveDateTime,
+    total_btc_valuation: f64,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct BalanceSnapshot {
-    pub balances: Vec<BalanceSnapshotItem>,
-    #[serde(rename = "totalAssetOfBtc", deserialize_with = "f64_from_string")]
-    pub total_asset_of_btc: f64,
+#[derive(Serialize, Clone)]
+pub struct BalanceSheetWithBalances {
+    sheet: BalanceSheet,
+    balances: Vec<Balance>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Snapshot {
-    pub data: BalanceSnapshot,
-    #[serde(rename = "updateTime")]
-    pub update_time: i64,
-    #[serde(rename = "type")]
-    pub wallet_type: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct AccountHistory {
-    pub code: i32,
-    pub msg: String,
-    #[serde(rename = "snapshotVos")]
-    pub snapshots: Vec<Snapshot>,
-}
-
-pub async fn fetch_account_balance_history() -> Result<(), String> {
+pub async fn fetch_balances() -> Result<(), String> {
     let config: Config = load_config::read_config();
     let credentials = Credentials::from_hmac(
         config.binance_api_key.to_owned(),
         config.binance_api_secret.to_owned(),
     );
     let client = BinanceHttpClient::default().credentials(credentials);
-    let period = chrono::Utc::now() - Duration::days(10);
-
-    // Get account information
     let response = client
-        .send(wallet::account_snapshot("SPOT").start_time(period.timestamp_millis() as u64))
+        .send(wallet::user_asset().need_btc_valuation(true))
         .map_err(|e| format!("Error fetching spot wallet {:?}", e))
         .await?
         .into_body_str()
         .map_err(|e| format!("Error parsing spot wallet response, {:?}", e))
         .await?;
 
-    match serde_json::from_str::<AccountHistory>(&response) {
-        Ok(account_history) => {
-            insert_account_history(&account_history).await?;
+    match serde_json::from_str::<Vec<ApiBalance>>(&response) {
+        Ok(balances) => {
+            insert_balances(balances).await?;
         }
-        Err(e) => log::warn!("Error parsing account history: {:?}", e),
+        Err(e) => log::warn!("Error parsing balances: {:?}", e),
     }
+    log::info!("Inserted new balances.");
     Ok(())
 }
 
-async fn insert_account_history(account_history: &AccountHistory) -> Result<(), String> {
+async fn insert_balances(api_balances: Vec<ApiBalance>) -> Result<(), String> {
     let connection = DB_POOL.get().unwrap();
-
-    sqlx::query("DELETE FROM account_history; DELETE FROM snapshots; DELETE FROM balances;")
-        .execute(connection)
-        .map_err(|e| format!("Error deleting old account history. {:?}", e))
-        .await?;
-
-    sqlx::query("INSERT INTO account_history (code, msg, last_queried) VALUES (?1, ?2, ?3)")
-        .bind(&account_history.code)
-        .bind(&account_history.msg)
-        .bind(chrono::Utc::now().timestamp_millis())
-        .execute(connection)
-        .map_err(|e| format!("Error inserting new account history. {:?}", e))
-        .await?;
+    let timestamp: String = DateTime::to_rfc3339(&Utc::now());
+    let total_btc_valuation: &f64 = &api_balances
+        .iter()
+        .map(|balance| balance.btc_valuation)
+        .sum();
+    let balance_sheet: BalanceSheet = sqlx::query_as(
+        "INSERT INTO balance_sheets (timestamp, total_btc_valuation) VALUES (?1, ?2) RETURNING *",
+    )
+    .bind(timestamp)
+    .bind(total_btc_valuation)
+    .fetch_one(connection)
+    .map_err(|e| format!("Error inserting new balances. {:?}", e))
+    .await?;
 
     // Insert snapshot data
-    for snapshot in &account_history.snapshots {
-        let snapshot_id: i64 = sqlx::query_as::<_, IdRow>(
-            r#"
-                    INSERT INTO snapshots (total_asset_of_btc, update_time, wallet_type) 
-                    VALUES (?1, ?2, ?3) 
-                    RETURNING id
-                "#,
+    for balance in api_balances {
+        sqlx::query(
+            "INSERT INTO balances (symbol, free, locked, freeze, withdrawing, ipoable, btc_valuation, balance_sheet_id)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         )
-        .bind(&snapshot.data.total_asset_of_btc)
-        .bind(&snapshot.update_time)
-        .bind(&snapshot.wallet_type)
-        .fetch_one(connection)
-        .map_err(|e| format!("Error fetching last kline. {:?}", e))
-        .await?
-        .id;
-
-        // Insert balances data
-        let balances = &snapshot.data.balances;
-        for balance in balances {
-            sqlx::query(
-                "INSERT INTO balances (asset, free, locked, snapshot_id) VALUES (?1, ?2, ?3, ?4)",
-            )
-            .bind(&balance.asset)
-            .bind(&balance.free)
-            .bind(&balance.locked)
-            .bind(&snapshot_id)
-            .execute(connection)
-            .map_err(|e| format!("Error inserting balance snapshot. {:?}", e))
-            .await?;
-        }
+        .bind(&balance.symbol)
+        .bind(&balance.free)
+        .bind(&balance.locked)
+        .bind(&balance.freeze)
+        .bind(&balance.withdrawing)
+        .bind(&balance.ipoable)
+        .bind(&balance.btc_valuation)
+        .bind(&balance_sheet.id)
+        .execute(connection)
+        .map_err(|e| format!("Error inserting a balance for {:?}. {:?}", &balance.symbol, e))
+        .await?;
     }
 
     // Commit transaction
     Ok(())
 }
 
-struct QuerySnapshot {
-    total_asset_of_btc: f64,
-    update_time: i64,
-    wallet_type: String,
-}
-
-struct QueryAccountHistory {
-    code: String,
-    msg: String,
-}
-
-pub async fn get_portfolio_snapshots(limit: i32) -> Result<AccountHistory, String> {
-    if limit <= 0 {
-        return Err("Must request at least 1 snapshot.".to_string());
-    }
+pub async fn get_balance_sheet() -> Result<BalanceSheetWithBalances, String> {
     let connection = DB_POOL.get().unwrap();
-    let account_history: (i32, String) =
-        sqlx::query_as("SELECT code, msg FROM account_history LIMIT 1")
-            .fetch_one(connection)
-            .map_err(|e| format!("Error fetching account_history. {:?}", e))
-            .await?;
-
-    let mut account_history = AccountHistory {
-        code: account_history.0,
-        msg: account_history.1,
-        snapshots: Vec::new(),
-    };
-
-    let query = &format!("
-       SELECT snapshots.id as snapshots.total_asset_of_btc, snapshots.update_time, snapshots.wallet_type, balances.asset, balances.free, balances.locked 
-        FROM snapshots     
-        LIMIT {:?}
-        INNER JOIN balances ON snapshots.id = balances.snapshot_id 
-	    WHERE free IS NOT 0
-    ", limit);
-
-    let snapshot_rows: Vec<(f64, i64, String, String, f64, f64)> = sqlx::query_as(query)
+    let balance_sheet: BalanceSheet = sqlx::query_as(
+        "SELECT * FROM balance_sheets WHERE id = (SELECT MAX(id) FROM balance_sheets)",
+    )
+    .fetch_one(connection)
+    .map_err(|e| format!("Error fetching last balance sheet. {:?}", e))
+    .await?;
+    let query = &format!(
+        "SELECT * 
+        FROM balances
+        WHERE balance_sheet_id = {:?}",
+        &balance_sheet.id
+    );
+    let balances: Vec<Balance> = sqlx::query_as(query)
         .fetch_all(connection)
-        .map_err(|e| format!("Error retrieving snapshots from database. {}", e))
+        .map_err(|e| format!("Error retrieving balances from database. {:?}", e))
         .await?;
 
-    let mut snapshots: Vec<Snapshot> = Vec::new();
+    let balance_sheet_with_balances = BalanceSheetWithBalances {
+        sheet: balance_sheet,
+        balances,
+    };
 
-    for row in snapshot_rows {
-        let mut snapshot = Snapshot {
-            data: BalanceSnapshot {
-                balances: Vec::new(),
-                total_asset_of_btc: row.0,
-            },
-            update_time: row.1,
-            wallet_type: row.2,
-        };
-        snapshot.data.balances.push(BalanceSnapshotItem {
-            asset: row.3,
-            free: row.4,
-            locked: row.5,
-        });
-        snapshots.push(snapshot)
-    }
-
-    for snapshot in snapshots {
-        account_history.snapshots.push(snapshot);
-    }
-    Ok(account_history)
+    Ok(balance_sheet_with_balances)
 }

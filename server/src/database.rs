@@ -43,23 +43,20 @@ pub async fn setup_tables() -> Result<(), String> {
                 "BEGIN;
         CREATE TABLE IF NOT EXISTS balances (
             id INTEGER PRIMARY KEY,
-            asset TEXT NOT NULL,
-            free TEXT NOT NULL,
-            locked TEXT NOT NULL,
-            snapshot_id INTEGER NOT NULL,
-            FOREIGN KEY(snapshot_id) REFERENCES snapshots(id)
+            symbol TEXT NOT NULL,
+            free REAL NOT NULL,
+            locked REAL NOT NULL,
+            freeze REAL NOT NULL,
+            withdrawing REAL NOT NULL,
+            ipoable REAL NOT NULL,
+            btc_valuation REAL NOT NULL,
+            balance_sheet_id INTEGER,
+            FOREIGN KEY (balance_sheet_id) REFERENCES balance_sheets (id)
         );
-        CREATE TABLE IF NOT EXISTS snapshots (
+        CREATE TABLE IF NOT EXISTS balance_sheets (
             id INTEGER PRIMARY KEY,
-            total_asset_of_btc TEXT NOT NULL,
-            update_time INTEGER NOT NULL,
-            wallet_type TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS account_history (
-            id INTEGER PRIMARY KEY,
-            code INTEGER NOT NULL,
-            msg TEXT NOT NULL,
-            last_queried DATETIME NOT NULL
+            total_btc_valuation REAL DEFAULT 0,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS klines (
             symbol TEXT NOT NULL,

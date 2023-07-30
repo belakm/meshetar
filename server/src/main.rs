@@ -18,7 +18,7 @@ use meshetar::Interval;
 use meshetar::Meshetar;
 use meshetar::MeshetarStatus;
 use meshetar::Pair;
-use portfolio::Snapshot;
+use portfolio::BalanceSheetWithBalances;
 use rocket::catch;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::form::Form;
@@ -108,8 +108,8 @@ async fn main() -> Result<(), String> {
 
     tokio::spawn(async {
         loop {
-            match portfolio::fetch_account_balance_history().await {
-                Err(e) => log::warn!("Error fetching portfolio: {:?}", e),
+            match portfolio::fetch_balances().await {
+                Err(e) => log::warn!("Error fetching balance: {:?}", e),
                 _ => (),
             }
             std::thread::sleep(std::time::Duration::from_millis(5000));
@@ -134,7 +134,7 @@ async fn main() -> Result<(), String> {
                 run,
                 create_new_model,
                 plot_chart,
-                wallet_status
+                balance_sheet
             ],
         )
         .mount("/", FileServer::new("static", Options::None).rank(1))
@@ -266,13 +266,10 @@ async fn clear_history(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Json<
     Accepted(Some(meshetar.lock().await.summerize_json()))
 }
 
-#[get("/wallet_status")]
-async fn wallet_status() -> Result<Accepted<Json<Snapshot>>, Custom<String>> {
-    match portfolio::get_portfolio_snapshots(1).await {
-        Ok(account_history) => match account_history.snapshots.first() {
-            Some(snapshot) => Ok(Accepted(Some(Json(snapshot.clone())))),
-            None => Err(Custom(Status::NotFound, "No snapshots found".to_string())),
-        },
+#[get("/balance_sheet")]
+async fn balance_sheet() -> Result<Accepted<Json<BalanceSheetWithBalances>>, Custom<String>> {
+    match portfolio::get_balance_sheet().await {
+        Ok(balance_sheet) => Ok(Accepted(Some(Json(balance_sheet.clone())))),
         Err(e) => Err(Custom(Status::NotFound, format!("{:?}", e))),
     }
 }

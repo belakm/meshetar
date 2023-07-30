@@ -1,12 +1,13 @@
 use crate::routes::{
-    self, change_interval, change_pair, fetch_last_kline_time, get_status, plot_chart,
+    self, change_interval, change_pair, fetch_balance_sheet, fetch_last_kline_time, get_status,
+    plot_chart,
 };
 use crate::store::Store;
-use crate::store_models::{Interval, Meshetar, Pair, Status};
+use crate::store_models::{BalanceSheetWithBalances, Interval, Meshetar, Pair, Status};
 use crate::utils::{console_log, get_timestamp, readable_date};
 use gloo_timers::future::TimeoutFuture;
 use sycamore::futures::spawn_local_scoped;
-use sycamore::prelude::{Html, Scope};
+use sycamore::prelude::{Html, Keyed, Scope};
 use sycamore::reactive::{create_effect, create_rc_signal, create_signal, provide_context};
 use sycamore::view::View;
 use sycamore::{component, view};
@@ -36,6 +37,7 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
         interval: create_rc_signal(String::from("Minutes1")),
         server_state: create_rc_signal(Status::Idle),
         last_kline_time: create_rc_signal(String::from("0")),
+        balance_sheet: create_rc_signal(BalanceSheetWithBalances::default()),
     };
     let store = provide_context(cx, store);
 
@@ -76,6 +78,10 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
             }
             match plot_chart().await {
                 Ok(path) => chart_path.set(path),
+                _ => (),
+            }
+            match fetch_balance_sheet().await {
+                Ok(balance_sheet) => store.balance_sheet.set(balance_sheet),
                 _ => (),
             }
             TimeoutFuture::new(3000).await;
@@ -171,6 +177,29 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                 }
                 p {
                     strong {"Last kline time: "} (readable_date(&store.last_kline_time.get()))
+                }
+            }
+            details {
+                summary(role="button", class="secondary") {
+                    "Balance "
+                    strong {
+                        (format!("{:.8} ₿", store.balance_sheet.get().sheet.total_btc_valuation))
+                    }
+                }
+                ul(class="asset-grid") {
+                    Keyed(
+                        iterable=store.balance_sheet.map(cx, |bs| bs.balances.clone()),
+                        view=|cx, balance| view! { cx,
+                            li(class="asset-grid-element") {
+                                strong { (balance.symbol) }
+                                br {}
+                                span { (balance.free) }
+                                br {}
+                                small { (balance.btc_valuation) " ₿" }
+                            }
+                        },
+                        key=|balance| balance.id
+                    )
                 }
             }
         }

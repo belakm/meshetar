@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use serde::Deserialize;
 use strum::{Display, EnumString};
 
@@ -11,21 +12,60 @@ pub enum Status {
     Running,
 }
 
-#[derive(Debug, Deserialize, Display, EnumString)]
+#[derive(Deserialize, Display, EnumString)]
 pub enum Pair {
     BTCUSDT,
     ETHBTC,
 }
 
-#[derive(Debug, Deserialize, Display, EnumString)]
+#[derive(Deserialize, Display, EnumString)]
 pub enum Interval {
     Minutes1,
     Minutes3,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct Meshetar {
     pub pair: Pair,
     pub interval: Interval,
     pub status: Status,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+pub struct Balance {
+    pub id: i64,
+    pub symbol: String,
+    pub free: f64,
+    pub locked: f64,
+    pub freeze: f64,
+    pub withdrawing: f64,
+    pub ipoable: f64,
+    pub btc_valuation: f64,
+    pub balance_sheet_id: i64,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct BalanceSheet {
+    pub id: i64,
+    pub timestamp: NaiveDateTime,
+    pub total_btc_valuation: f64,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct BalanceSheetWithBalances {
+    pub sheet: BalanceSheet,
+    pub balances: Vec<Balance>,
+}
+
+impl Default for BalanceSheetWithBalances {
+    fn default() -> Self {
+        Self {
+            sheet: BalanceSheet {
+                id: 0,
+                timestamp: NaiveDateTime::from_timestamp_millis(0).unwrap(),
+                total_btc_valuation: 0f64,
+            },
+            balances: Vec::new(),
+        }
+    }
 }
