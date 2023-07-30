@@ -7,7 +7,7 @@ mod formatting;
 mod load_config;
 mod meshetar;
 mod plot;
-// mod portfolio;
+mod portfolio;
 mod prediction_model;
 mod rlang_runner;
 
@@ -105,6 +105,17 @@ async fn main() -> Result<(), String> {
     let meshetar = Arc::new(Mutex::new(Meshetar::new()));
     let (sender, receiver) = watch::channel(false);
     let task_control = Arc::new(Mutex::new(TaskControl { sender, receiver }));
+
+    tokio::spawn(async {
+        loop {
+            log::info!("TICK");
+            match portfolio::fetch_account_balance_history().await {
+                Err(e) => log::warn!("Error fetching portfolio: {:?}", e),
+                _ => (),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5000));
+        }
+    });
 
     match rocket::build()
         .attach(CORS)

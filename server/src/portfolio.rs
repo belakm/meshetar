@@ -5,20 +5,36 @@ use crate::{
 use binance_spot_connector_rust::{http::Credentials, hyper::BinanceHttpClient, wallet};
 use chrono::Duration;
 use futures::TryFutureExt;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use sqlx::FromRow;
+
+fn f64_from_string<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    s.parse::<f64>().map_err(serde::de::Error::custom)
+}
+
+#[derive(FromRow)]
+struct IdRow {
+    id: i64,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct BalanceSnapshotItem {
     pub asset: String,
-    pub free: String,
-    pub locked: String,
+    #[serde(deserialize_with = "f64_from_string")]
+    pub free: f64,
+    #[serde(deserialize_with = "f64_from_string")]
+    pub locked: f64,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct BalanceSnapshot {
     pub balances: Vec<BalanceSnapshotItem>,
-    #[serde(rename = "totalAssetOfBtc")]
-    pub total_asset_of_btc: String,
+    #[serde(rename = "totalAssetOfBtc", deserialize_with = "f64_from_string")]
+    pub total_asset_of_btc: f64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -35,7 +51,7 @@ pub struct AccountHistory {
     pub code: i32,
     pub msg: String,
     #[serde(rename = "snapshotVos")]
-    pub snapshot_vos: Vec<Snapshot>,
+    pub snapshots: Vec<Snapshot>,
 }
 
 pub async fn fetch_account_balance_history() -> Result<(), String> {
@@ -45,7 +61,6 @@ pub async fn fetch_account_balance_history() -> Result<(), String> {
         config.binance_api_secret.to_owned(),
     );
     let client = BinanceHttpClient::default().credentials(credentials);
-
     let period = chrono::Utc::now() - Duration::days(10);
 
     // Get account information
@@ -54,12 +69,15 @@ pub async fn fetch_account_balance_history() -> Result<(), String> {
         .map_err(|e| format!("Error fetching spot wallet {:?}", e))
         .await?
         .into_body_str()
-        .map_err(|e| format!("Error with parsing spot wallet response, {:?}", e))
+        .map_err(|e| format!("Error parsing spot wallet response, {:?}", e))
         .await?;
 
-    let account_history: AccountHistory = serde_json::from_str(&response).unwrap();
-    insert_account_history(&account_history).await;
-
+    match serde_json::from_str::<AccountHistory>(&response) {
+        Ok(account_history) => {
+            insert_account_history(&account_history).await?;
+        }
+        Err(e) => log::warn!("Error parsing account history: {:?}", e),
+    }
     Ok(())
 }
 
@@ -80,25 +98,21 @@ async fn insert_account_history(account_history: &AccountHistory) -> Result<(), 
         .await?;
 
     // Insert snapshot data
-    for snapshot in &account_history.snapshot_vos {
-        let mut snapshot_statement = conn.prepare("INSERT INTO snapshots (total_asset_of_btc, update_time, wallet_type) VALUES (?1, ?2, ?3) RETURNING *")?;
-        let snapshot_id = snapshot_statement.query_row(
-            (
-                &snapshot.data.total_asset_of_btc,
-                &snapshot.update_time,
-                &snapshot.wallet_type,
-            ),
-            |row| row.get::<usize, i64>(0),
-        )?;
-
-        let row = sqlx::query_as("INSERT INTO snapshots (total_asset_of_btc, update_time, wallet_type) VALUES (?1, ?2, ?3) RETURNING id")
-            .bind(&snapshot.data.total_asset_of_btc)
-            .bind(&snapshot.update_time)
-            .bind(&snapshot.wallet_type)
-            .fetch_one(connection)
-            .map_err(|e| format!("Error fetching last kline. {:?}", e))
-            .await?;
-        let snapshot_id: i64 = row.0;
+    for snapshot in &account_history.snapshots {
+        let snapshot_id: i64 = sqlx::query_as::<_, IdRow>(
+            r#"
+                    INSERT INTO snapshots (total_asset_of_btc, update_time, wallet_type) 
+                    VALUES (?1, ?2, ?3) 
+                    RETURNING id
+                "#,
+        )
+        .bind(&snapshot.data.total_asset_of_btc)
+        .bind(&snapshot.update_time)
+        .bind(&snapshot.wallet_type)
+        .fetch_one(connection)
+        .map_err(|e| format!("Error fetching last kline. {:?}", e))
+        .await?
+        .id;
 
         // Insert balances data
         let balances = &snapshot.data.balances;
@@ -133,25 +147,29 @@ struct QueryAccountHistory {
 
 pub async fn get_account_history_with_snapshots() -> Result<AccountHistory, String> {
     let connection = DB_POOL.get().unwrap();
-    let mut account_history = sqlx::query("SELECT code, msg FROM account_history LIMIT 1")
-        .fetch_one(connection)
-        .map_err(|e| format!("Error fetching account_history. {:?}", e))
-        .await?;
+    let account_history: (i32, String) =
+        sqlx::query_as("SELECT code, msg FROM account_history LIMIT 1")
+            .fetch_one(connection)
+            .map_err(|e| format!("Error fetching account_history. {:?}", e))
+            .await?;
 
     let mut account_history = AccountHistory {
         code: account_history.0,
         msg: account_history.1,
-        snapshot_vos: Vec::new(),
+        snapshots: Vec::new(),
     };
 
-    let snapshot_rows = sqlx::query(r#"
+    let snapshot_rows: Vec<(f64, i64, String, String, f64, f64)> = sqlx::query_as(r#"
        SELECT snapshots.id as snapshots.total_asset_of_btc, snapshots.update_time, snapshots.wallet_type, balances.asset, balances.free, balances.locked 
         FROM snapshots        
         INNER JOIN balances ON snapshots.id = balances.snapshot_id 
 	    WHERE free IS NOT 0
-    "#).fetch_all(connection).map_err(|e| format!("Error retrieving snapshots from database. {}", e)).await?;
+    "#)
+        .fetch_all(connection)
+        .map_err(|e| format!("Error retrieving snapshots from database. {}", e))
+        .await?;
 
-    let mut snapshot_vos: Vec<Snapshot> = Vec::new();
+    let mut snapshots: Vec<Snapshot> = Vec::new();
 
     for row in snapshot_rows {
         let mut snapshot = Snapshot {
@@ -167,11 +185,11 @@ pub async fn get_account_history_with_snapshots() -> Result<AccountHistory, Stri
             free: row.4,
             locked: row.5,
         });
-        snapshot_vos.push(snapshot)
+        snapshots.push(snapshot)
     }
 
-    for snapshot in snapshot_vos {
-        account_history.snapshot_vos.push(snapshot);
+    for snapshot in snapshots {
+        account_history.snapshots.push(snapshot);
     }
     Ok(account_history)
 }
