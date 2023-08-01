@@ -1,5 +1,6 @@
 // Main modules
 //
+mod asset_ticker;
 mod binance_client;
 mod book;
 mod database;
@@ -10,6 +11,7 @@ mod plot;
 mod portfolio;
 mod prediction_model;
 mod rlang_runner;
+mod serde_utils;
 
 use book::latest_kline_date;
 use env_logger::Builder;
@@ -106,6 +108,14 @@ async fn main() -> Result<(), String> {
     let (sender, receiver) = watch::channel(false);
     let task_control = Arc::new(Mutex::new(TaskControl { sender, receiver }));
 
+    // Hook to assets ticker
+    tokio::spawn(async {
+        match asset_ticker::subscribe().await {
+            _ => log::warn!("Price fetching ended."),
+        }
+    });
+
+    // Periodically get account status
     tokio::spawn(async {
         loop {
             match portfolio::fetch_balances().await {

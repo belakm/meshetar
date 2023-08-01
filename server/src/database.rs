@@ -46,16 +46,11 @@ pub async fn setup_tables() -> Result<(), String> {
             symbol TEXT NOT NULL,
             free REAL NOT NULL,
             locked REAL NOT NULL,
-            freeze REAL NOT NULL,
-            withdrawing REAL NOT NULL,
-            ipoable REAL NOT NULL,
-            btc_valuation REAL NOT NULL,
             balance_sheet_id INTEGER,
             FOREIGN KEY (balance_sheet_id) REFERENCES balance_sheets (id)
         );
         CREATE TABLE IF NOT EXISTS balance_sheets (
             id INTEGER PRIMARY KEY,
-            total_btc_valuation REAL DEFAULT 0,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS klines (
@@ -80,6 +75,26 @@ pub async fn setup_tables() -> Result<(), String> {
             time INTEGER NOT NULL,
             signal TEXT NOT NULL,
             PRIMARY KEY (symbol, interval, time)
+        );
+        CREATE TABLE IF NOT EXISTS asset_ticker (
+            symbol TEXT NOT NULL,
+            price_change REAL NOT NULL,
+            price_change_percent REAL NOT NULL,
+            weighted_average_price REAL NOT NULL,
+            first_price REAL NOT NULL,
+            last_price REAL NOT NULL,
+            last_quantity REAL NOT NULL,
+            best_bid_price REAL NOT NULL,
+            best_bid_quantity REAL NOT NULL,
+            best_ask_price REAL NOT NULL,
+            best_ask_quantity REAL NOT NULL,
+            open_price REAL NOT NULL,
+            high_price REAL NOT NULL,
+            low_price REAL NOT NULL,
+            total_traded_base_volume REAL NOT NULL,
+            total_traded_quote_volume REAL NOT NULL,
+            number_of_trades INTEGER NOT NULL,
+            PRIMARY KEY (symbol)
         );
         COMMIT;",
             )

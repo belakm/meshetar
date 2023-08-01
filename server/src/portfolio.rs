@@ -1,20 +1,9 @@
-use crate::{
-    database::DB_POOL,
-    load_config::{self, Config},
-};
-use binance_spot_connector_rust::{http::Credentials, hyper::BinanceHttpClient, wallet};
+use crate::{binance_client::BINANCE_CLIENT, database::DB_POOL, serde_utils::f64_from_string};
+use binance_spot_connector_rust::trade;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::TryFutureExt;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-
-fn f64_from_string<'de, D>(deserializer: D) -> Result<f64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    s.parse::<f64>().map_err(serde::de::Error::custom)
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ApiBalance {
@@ -24,14 +13,11 @@ struct ApiBalance {
     free: f64,
     #[serde(deserialize_with = "f64_from_string")]
     locked: f64,
-    #[serde(deserialize_with = "f64_from_string")]
-    freeze: f64,
-    #[serde(deserialize_with = "f64_from_string")]
-    withdrawing: f64,
-    #[serde(deserialize_with = "f64_from_string")]
-    ipoable: f64,
-    #[serde(deserialize_with = "f64_from_string", rename = "btcValuation")]
-    btc_valuation: f64,
+}
+
+#[derive(Deserialize, Debug)]
+struct ApiAccount {
+    balances: Vec<ApiBalance>,
 }
 
 #[derive(FromRow, Clone, Serialize)]
@@ -40,10 +26,6 @@ pub struct Balance {
     symbol: String,
     free: f64,
     locked: f64,
-    freeze: f64,
-    withdrawing: f64,
-    ipoable: f64,
-    btc_valuation: f64,
     balance_sheet_id: i64,
 }
 
@@ -51,7 +33,6 @@ pub struct Balance {
 pub struct BalanceSheet {
     id: i64,
     timestamp: NaiveDateTime,
-    total_btc_valuation: f64,
 }
 
 #[derive(Serialize, Clone)]
@@ -61,23 +42,18 @@ pub struct BalanceSheetWithBalances {
 }
 
 pub async fn fetch_balances() -> Result<(), String> {
-    let config: Config = load_config::read_config();
-    let credentials = Credentials::from_hmac(
-        config.binance_api_key.to_owned(),
-        config.binance_api_secret.to_owned(),
-    );
-    let client = BinanceHttpClient::default().credentials(credentials);
+    let client = BINANCE_CLIENT.get().unwrap();
     let response = client
-        .send(wallet::user_asset().need_btc_valuation(true))
+        .send(trade::account())
         .map_err(|e| format!("Error fetching spot wallet {:?}", e))
         .await?
         .into_body_str()
         .map_err(|e| format!("Error parsing spot wallet response, {:?}", e))
         .await?;
 
-    match serde_json::from_str::<Vec<ApiBalance>>(&response) {
+    match serde_json::from_str::<ApiAccount>(&response) {
         Ok(balances) => {
-            insert_balances(balances).await?;
+            insert_balances(balances.balances).await?;
         }
         Err(e) => log::warn!("Error parsing balances: {:?}", e),
     }
@@ -87,38 +63,41 @@ pub async fn fetch_balances() -> Result<(), String> {
 
 async fn insert_balances(api_balances: Vec<ApiBalance>) -> Result<(), String> {
     let connection = DB_POOL.get().unwrap();
+    let mut tx = connection
+        .begin()
+        .map_err(|e| format!("Error on creating transaction on balances: {:?}", e))
+        .await?;
     let timestamp: String = DateTime::to_rfc3339(&Utc::now());
-    let total_btc_valuation: &f64 = &api_balances
-        .iter()
-        .map(|balance| balance.btc_valuation)
-        .sum();
-    let balance_sheet: BalanceSheet = sqlx::query_as(
-        "INSERT INTO balance_sheets (timestamp, total_btc_valuation) VALUES (?1, ?2) RETURNING *",
-    )
-    .bind(timestamp)
-    .bind(total_btc_valuation)
-    .fetch_one(connection)
-    .map_err(|e| format!("Error inserting new balances. {:?}", e))
-    .await?;
+    let balance_sheet: BalanceSheet =
+        sqlx::query_as("INSERT INTO balance_sheets (timestamp) VALUES (?1) RETURNING *")
+            .bind(timestamp)
+            .fetch_one(connection)
+            .map_err(|e| format!("Error inserting new balances. {:?}", e))
+            .await?;
 
     // Insert snapshot data
     for balance in api_balances {
         sqlx::query(
-            "INSERT INTO balances (symbol, free, locked, freeze, withdrawing, ipoable, btc_valuation, balance_sheet_id)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO balances (symbol, free, locked, balance_sheet_id)
+            VALUES (?1, ?2, ?3, ?4)",
         )
         .bind(&balance.symbol)
         .bind(&balance.free)
         .bind(&balance.locked)
-        .bind(&balance.freeze)
-        .bind(&balance.withdrawing)
-        .bind(&balance.ipoable)
-        .bind(&balance.btc_valuation)
         .bind(&balance_sheet.id)
-        .execute(connection)
-        .map_err(|e| format!("Error inserting a balance for {:?}. {:?}", &balance.symbol, e))
+        .execute(tx.as_mut())
+        .map_err(|e| {
+            format!(
+                "Error inserting a balance for {:?}. {:?}",
+                &balance.symbol, e
+            )
+        })
         .await?;
     }
+
+    tx.commit()
+        .map_err(|e| format!("Error committing new balances: {:?}", e))
+        .await?;
 
     // Commit transaction
     Ok(())
