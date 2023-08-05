@@ -12,8 +12,9 @@
 # library("here")
 pacman::p_load(RSQLite, TTR, quantmod, xgboost, ROCR, Information, PerformanceAnalytics,
                rpart, randomForest, dplyr, magrittr, here)
-
-here::i_am("models/default_create.R")
+suppressMessages(
+  here::i_am("models/default_create.R")
+)
 
 # Connect to the SQLite database
 conn <- dbConnect(RSQLite::SQLite(), "database.sqlite")
@@ -43,7 +44,6 @@ rownames(data) <- as.POSIXct(data$open_time)
 
 # Exclude any rows that contain NA, NaN, or Inf values
 data <- data[complete.cases(data), ]
-
 # Convert 'open_time' from milliseconds since the epoch to a date-time object
 # data$open_time <- as.POSIXct(data$open_time / 1000, origin="1970-01-01", tz="UTC")
 
@@ -55,12 +55,15 @@ source(paste0(here::here(), "/models/functions/optimal_trading_signal.R"))
 source(paste0(here::here(), "/models/functions/add_ta.R"))
 
 # Find the target (optimal signal)
-optimal_signal_params <- optimal_trading_signal(candles_df, max_holding_period = 10*59) # 4 hours maximum possible hold
+optimal_signal_params <- optimal_trading_signal(
+  candles_df, 
+  max_holding_period = nrow(candles_df)/2) # half the candle instances 
 
 signal <- optimal_signal_params$signals
 
 # Assign technical indicators to the candles
 tech_ind <- add_ta(candles_df = candles_df)
+# print("tech_ind_success")
 
 # Find the number of omitted cases due to MA calculations due to lags
 how_many_ommited <- sum(!complete.cases(cbind(signal, tech_ind[-1,])))

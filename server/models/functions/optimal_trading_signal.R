@@ -4,23 +4,14 @@ optimal_trading_signal <- function(binance_kline,
                                    fee_rate = 0.015, 
                                    max_holding_period) {
   
-  # First create a function for i in max_holding period (function to optimize)
+  roc <- diff(binance_kline$close)
+  roc[is.na(roc)] <- 0
   
+  # Calculate the returns based on the holding period
+  returns <- c(rep(0, length(roc)))
+  
+  # First create a function for i in max_holding period (function to optimize)
   create_signals <- function(holding_period){
-
-    # Calculate the rate of change (ROC) based on the price data
-    # binance_kline$open <- as.numeric(as.character(binance_kline$open))
-    # binance_kline$high <- as.numeric(as.character(binance_kline$high))
-    # binance_kline$low <- as.numeric(as.character(binance_kline$low))
-    # binance_kline$close <- as.numeric(as.character(binance_kline$close))
-    # binance_kline$volume <- as.numeric(as.character(binance_kline$volume))
-
-    roc <- diff(log(as.numeric(as.character(binance_kline$close))))
-    roc[is.na(roc)] <- 0
-
-    # Calculate the returns based on the holding period
-    returns <- c(rep(0, length(roc)))
-
     if(holding_period == 1){
       returns <- roc
     } else{
@@ -33,13 +24,13 @@ optimal_trading_signal <- function(binance_kline,
         }
       }
     }
-
+    
     # Create a vector to store the trading signals
     signals <- rep(0, length(returns))
     
     ## Calculate the optimal buying, holding, and selling signals
     # sell when the returns were the highest
-    for (i in (2*holding_period):(length(returns))) {
+    for (i in (holding_period):(length(returns))) {
       # sell when return was above fee + min_profit
       if(returns[i] > (buy_threshold + fee_rate)) {
           signals[i] <- -1  
@@ -61,13 +52,11 @@ optimal_trading_signal <- function(binance_kline,
     
     # Calculate the cumulative returns
     cumulative_returns <- cumsum(actual_returns)
-    
-    
+
     return(list(signals = signals, 
                 net_returns = returns,
                 cumulative_returns = cumulative_returns))
   }
-  
 
   # Loop over all holding periods
   find_optimal_hodl <- NULL; for(i in 1:max_holding_period){
@@ -75,10 +64,9 @@ optimal_trading_signal <- function(binance_kline,
     find_optimal_hodl <- rbind(find_optimal_hodl, 
                                tail(holding_period_i$cumulative_returns,1))
   }
-  
+
   # Find optimal holding_period by position of max cumulative return
   optimal_hodl <- which(find_optimal_hodl == max(find_optimal_hodl))
-  
   if(length(optimal_hodl) > 1){ stop("More than 1 optimal holding_period (probably no signal was created)")}
   
   # Final output
