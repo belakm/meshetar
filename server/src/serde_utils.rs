@@ -7,3 +7,7 @@ where
     let s = String::deserialize(deserializer)?;
     s.parse::<f64>().map_err(serde::de::Error::custom)
 }
+
+pub fn f64_default() -> f64 {
+    0.0
+}

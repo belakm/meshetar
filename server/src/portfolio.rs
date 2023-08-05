@@ -1,4 +1,8 @@
-use crate::{binance_client::BINANCE_CLIENT, database::DB_POOL, serde_utils::f64_from_string};
+use crate::{
+    binance_client::BINANCE_CLIENT,
+    database::DB_POOL,
+    serde_utils::{f64_default, f64_from_string},
+};
 use binance_spot_connector_rust::trade;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::TryFutureExt;
@@ -7,12 +11,13 @@ use sqlx::FromRow;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ApiBalance {
-    #[serde(rename = "asset")]
-    symbol: String,
+    asset: String,
     #[serde(deserialize_with = "f64_from_string")]
     free: f64,
     #[serde(deserialize_with = "f64_from_string")]
     locked: f64,
+    #[serde(default = "f64_default")]
+    btc_valuation: f64,
 }
 
 #[derive(Deserialize, Debug)]
@@ -23,16 +28,20 @@ struct ApiAccount {
 #[derive(FromRow, Clone, Serialize)]
 pub struct Balance {
     id: i64,
-    symbol: String,
+    asset: String,
     free: f64,
     locked: f64,
     balance_sheet_id: i64,
+    #[serde(default = "f64_default")]
+    btc_valuation: f64,
 }
 
 #[derive(FromRow, Clone, Serialize)]
 pub struct BalanceSheet {
     id: i64,
     timestamp: NaiveDateTime,
+    btc_valuation: f64,
+    busd_valuation: f64,
 }
 
 #[derive(Serialize, Clone)]
@@ -68,32 +77,65 @@ async fn insert_balances(api_balances: Vec<ApiBalance>) -> Result<(), String> {
         .map_err(|e| format!("Error on creating transaction on balances: {:?}", e))
         .await?;
     let timestamp: String = DateTime::to_rfc3339(&Utc::now());
-    let balance_sheet: BalanceSheet =
-        sqlx::query_as("INSERT INTO balance_sheets (timestamp) VALUES (?1) RETURNING *")
-            .bind(timestamp)
-            .fetch_one(connection)
-            .map_err(|e| format!("Error inserting new balances. {:?}", e))
-            .await?;
+    let balance_sheet: BalanceSheet = sqlx::query_as(
+        "INSERT INTO balance_sheets (timestamp, btc_valuation, busd_valuation) VALUES (?1, 0.0, 0.0) RETURNING *",
+    )
+    .bind(timestamp)
+    .fetch_one(connection)
+    .map_err(|e| format!("Error inserting new balances. {:?}", e))
+    .await?;
 
     // Insert snapshot data
     for balance in api_balances {
         sqlx::query(
-            "INSERT INTO balances (symbol, free, locked, balance_sheet_id)
-            VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO balances (asset, free, locked, balance_sheet_id, btc_valuation) 
+            VALUES (
+                ?1, 
+                ?2, 
+                ?3, 
+                ?4,
+                CASE
+                    WHEN ?1 = 'BTC' THEN ?2 -- Btc valuation for btc is btc free field
+                    ELSE COALESCE((SELECT last_price FROM asset_ticker WHERE symbol = ?5), 0) * ?6
+                END
+            )",
         )
-        .bind(&balance.symbol)
+        .bind(&balance.asset)
         .bind(&balance.free)
         .bind(&balance.locked)
         .bind(&balance_sheet.id)
+        .bind(&format!("{}{}", balance.asset.to_string(), "BTC"))
+        .bind(&balance.free)
         .execute(tx.as_mut())
         .map_err(|e| {
             format!(
                 "Error inserting a balance for {:?}. {:?}",
-                &balance.symbol, e
+                &balance.asset, e
             )
         })
         .await?;
     }
+
+    sqlx::query(
+        "
+        UPDATE balance_sheets
+        SET btc_valuation = (
+            SELECT SUM(btc_valuation)
+            FROM balances
+            WHERE balance_sheet_id = ?1
+        ),
+        busd_valuation = (
+            SELECT SUM(btc_valuation) * asset_ticker.last_price
+            FROM balances
+            LEFT JOIN asset_ticker ON asset_ticker.symbol = 'BTCBUSD'
+            WHERE balance_sheet_id = ?1
+        )
+        WHERE id = ?1",
+    )
+    .bind(&balance_sheet.id)
+    .execute(tx.as_mut())
+    .map_err(|e| format!("Error summing balances on balance_sheet {:?}", e))
+    .await?;
 
     tx.commit()
         .map_err(|e| format!("Error committing new balances: {:?}", e))

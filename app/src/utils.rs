@@ -20,3 +20,20 @@ pub fn readable_date(epoch: &str) -> String {
         Err(_) => String::from("Invalid date (parse error)"),
     }
 }
+
+pub fn to_fiat_format(value: f64) -> String {
+    let integer = value as u64;
+    let fractional = (value.fract() * 100.0).round() as u64;
+
+    let mut formatted_integer = String::new();
+    let integer_str = format!("{}", integer);
+
+    for (i, c) in integer_str.chars().rev().enumerate() {
+        if i != 0 && i % 3 == 0 {
+            formatted_integer.insert(0, '.');
+        }
+        formatted_integer.insert(0, c);
+    }
+
+    format!("{},{:02}", formatted_integer, fractional)
+}

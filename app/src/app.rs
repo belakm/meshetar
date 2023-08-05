@@ -4,7 +4,7 @@ use crate::routes::{
 };
 use crate::store::Store;
 use crate::store_models::{BalanceSheetWithBalances, Interval, Meshetar, Pair, Status};
-use crate::utils::{console_log, get_timestamp, readable_date};
+use crate::utils::{console_log, get_timestamp, readable_date, to_fiat_format};
 use gloo_timers::future::TimeoutFuture;
 use sycamore::futures::spawn_local_scoped;
 use sycamore::prelude::{Html, Keyed, Scope};
@@ -82,7 +82,7 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
             }
             match fetch_balance_sheet().await {
                 Ok(balance_sheet) => store.balance_sheet.set(balance_sheet),
-                _ => (),
+                Err(e) => console_log(&format!("Error fetching sheet: {:?}", e)),
             }
             TimeoutFuture::new(3000).await;
         }
@@ -181,9 +181,13 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
             }
             details {
                 summary(role="button", class="secondary") {
-                    "Balance "
-                    strong {
-                        (format!("{:.8} ₿", store.balance_sheet.get().sheet.total_btc_valuation))
+                    "Balance | "
+                    strong(class="text-success") {
+                        (format!("{:.8} ₿", store.balance_sheet.get().sheet.btc_valuation))
+                    }
+                    " | "
+                    strong(class="text-success") {
+                        (format!("{} BUSD", to_fiat_format(store.balance_sheet.get().sheet.busd_valuation)))
                     }
                 }
                 ul(class="asset-grid") {
@@ -191,11 +195,11 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                         iterable=store.balance_sheet.map(cx, |bs| bs.balances.clone()),
                         view=|cx, balance| view! { cx,
                             li(class="asset-grid-element") {
-                                strong { (balance.symbol) }
+                                strong { (balance.asset) }
                                 br {}
                                 span { (balance.free) }
                                 br {}
-                                small { (balance.btc_valuation) " ₿" }
+                                small { (format!("{:.8} ₿", balance.btc_valuation)) }
                             }
                         },
                         key=|balance| balance.id
