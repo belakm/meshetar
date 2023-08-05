@@ -1,15 +1,17 @@
-library("RSQLite")
-library("TTR")
-library("quantmod")
-library("xgboost")
-library("ROCR")
-library("Information")
-library("PerformanceAnalytics")
-library("rpart")
-library("randomForest")
-library("dplyr")
-library("magrittr")
-library("here")
+# library("RSQLite")
+# library("TTR")
+# library("quantmod")
+# library("xgboost")
+# library("ROCR")
+# library("Information")
+# library("PerformanceAnalytics")
+# library("rpart")
+# library("randomForest")
+# library("dplyr")
+# library("magrittr")
+# library("here")
+pacman::p_load(RSQLite, TTR, quantmod, xgboost, ROCR, Information, PerformanceAnalytics,
+               rpart, randomForest, dplyr, magrittr, here)
 
 here::i_am("models/default_create.R")
 
@@ -17,18 +19,27 @@ here::i_am("models/default_create.R")
 conn <- dbConnect(RSQLite::SQLite(), "database.sqlite")
 
 # Query the klines table and retrieve the historical data
-query <- "SELECT * FROM klines WHERE symbol = 'BTCUSDT' ORDER BY open_time ASC"
+query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
+                 high, 
+                 low, 
+                 close, 
+                 volume
+          FROM klines
+          WHERE symbol = 'BTCUSDT'
+          ORDER BY open_time ASC;"
 data <- dbGetQuery(conn, query)
 
 # Disconnect from the database
 dbDisconnect(conn)
 
-# Calculate the rate of change (ROC) based on the price data
-data$open <- as.numeric(as.character(data$open))
-data$high <- as.numeric(as.character(data$high))
-data$low <- as.numeric(as.character(data$low))
-data$close <- as.numeric(as.character(data$close))
-data$volume <- as.numeric(as.character(data$volume))
+rownames(data) <- as.POSIXct(data$open_time)
+
+# # Calculate the rate of change (ROC) based on the price data
+# data$open <- as.numeric(as.character(data$open))
+# data$high <- as.numeric(as.character(data$high))
+# data$low <- as.numeric(as.character(data$low))
+# data$close <- as.numeric(as.character(data$close))
+# data$volume <- as.numeric(as.character(data$volume))
 
 # Exclude any rows that contain NA, NaN, or Inf values
 data <- data[complete.cases(data), ]
@@ -45,6 +56,7 @@ source(paste0(here::here(), "/models/functions/add_ta.R"))
 
 # Find the target (optimal signal)
 optimal_signal_params <- optimal_trading_signal(candles_df, max_holding_period = 10*59) # 4 hours maximum possible hold
+
 signal <- optimal_signal_params$signals
 
 # Assign technical indicators to the candles
@@ -53,8 +65,12 @@ tech_ind <- add_ta(candles_df = candles_df)
 # Find the number of omitted cases due to MA calculations due to lags
 how_many_ommited <- sum(!complete.cases(cbind(signal, tech_ind[-1,])))
 
-# create a modelling dataframe
-signal_with_TA <- cbind(signal, tech_ind[-1])
+if(length(signal) != nrow(tech_ind)){
+  signal <- c(0, signal) # add 0 as the first signal.
+}
+
+# create a modelling data frame
+signal_with_TA <- cbind(signal, tech_ind)
 
 # We are interested in buy signals only (optimal holding time is fixed)
 signal_with_TA$signal <- ifelse(signal_with_TA$signal == -1, 0, signal_with_TA$signal)
@@ -117,7 +133,7 @@ for (i in seq_along(k_values)) {
   # Subset the data to include only the top k features
   subset_data <- train[, top_features, drop = FALSE]
   # Train an XGBoost model using the subset data
-  subset_dtrain <- xgb.DMatrix(subset_data, label = train$signal)
+  subset_dtrain <- xgb.DMatrix(as.matrix(subset_data), label = train$signal)
   cv_error <- xgb.cv(params, subset_dtrain, nfold = 5, nrounds = 10, 
                      metrics = "error", verbose = FALSE)
   # Store the cross-validation error rate for this value of k
@@ -168,7 +184,7 @@ if(all(test$signal == 0)){
   model$optimal_cutoff <- optimal_cutoff <- pROC::coords(pred, "best", ret = "threshold", input.sort = FALSE)
 }
 
-# Save the trained model to a file
+# Save the trained model to a file-
 saveRDS(model, "models/prediction_model.rds")
 
 cat("Model done")

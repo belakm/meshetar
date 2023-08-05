@@ -9,11 +9,11 @@ optimal_trading_signal <- function(binance_kline,
   create_signals <- function(holding_period){
 
     # Calculate the rate of change (ROC) based on the price data
-    binance_kline$open <- as.numeric(as.character(binance_kline$open))
-    binance_kline$high <- as.numeric(as.character(binance_kline$high))
-    binance_kline$low <- as.numeric(as.character(binance_kline$low))
-    binance_kline$close <- as.numeric(as.character(binance_kline$close))
-    binance_kline$volume <- as.numeric(as.character(binance_kline$volume))
+    # binance_kline$open <- as.numeric(as.character(binance_kline$open))
+    # binance_kline$high <- as.numeric(as.character(binance_kline$high))
+    # binance_kline$low <- as.numeric(as.character(binance_kline$low))
+    # binance_kline$close <- as.numeric(as.character(binance_kline$close))
+    # binance_kline$volume <- as.numeric(as.character(binance_kline$volume))
 
     roc <- diff(log(as.numeric(as.character(binance_kline$close))))
     roc[is.na(roc)] <- 0

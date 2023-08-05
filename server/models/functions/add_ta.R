@@ -1,9 +1,14 @@
-library(TTR)
-
 add_ta <- function(candles_df){
+  con_OHLC_quantmod <- quantmod::OHLCV(candles_df)
+  
+  # Assign open_time to rownames, this is how as.xts input works.s
+  rownames(con_OHLC_quantmod) <- con_OHLC_quantmod$open_time
+  con_OHLC_quantmod$open_time <- NULL
+  
+  con_OHLC <- as.xts(con_OHLC_quantmod)
 
-  con_OHLC <- xts::as.xts(quantmod::OHLCV(candles_df))
-  close_price <- as.numeric(quantmod::Cl(con_OHLC)$close)
+  close_price <- quantmod::Cl(con_OHLC)
+
   
   sma <- TTR::SMA(close_price)
   ema <- TTR::EMA(close_price)
@@ -14,7 +19,8 @@ add_ta <- function(candles_df){
   macd <- setNames(TTR::MACD(close_price)[,'macd'], "macd")
   macd_sig <- setNames(TTR::MACD(close_price)[,'signal'], "macd_sig")
   rsi <-  setNames(TTR::RSI(close_price), "rsi") #Relative Strength Index
-  # tr <- TTR::ATR(con_OHLC)[,'tr']
+  
+  tr <- TTR::ATR(con_OHLC)[,'tr']
   true_high <- TTR::ATR(con_OHLC)[,'trueHigh']
   true_low <- TTR::ATR(con_OHLC)[,'trueLow']
   atr <- TTR::ATR(con_OHLC)[,'atr'] # True Range / Average True Range
@@ -29,7 +35,7 @@ add_ta <- function(candles_df){
   aroon_dn <- TTR::aroon(con_OHLC[,c('high','low')])[,'aroonDn']
   chaikin_volatility <- setNames(quantmod::Delt(TTR::chaikinVolatility(con_OHLC[,c("high","low")]))[,1], "chaikin_volatility")
   emv <- TTR::EMV(cbind(con_OHLC[,c('high','low')]), candles_df[,'volume'])[,'emv']
-  ma_emv <- setNames(as.xts(EMV(cbind(con_OHLC[,c('high','low')]), con[,'volume'])[,'maEMV']),nm =  "ma_emv")
+  ma_emv <- setNames(as.xts(EMV(cbind(con_OHLC[,c('high','low')]), con_OHLC[,'volume'])[,'maEMV']),nm =  "ma_emv")
   mfi <- setNames(xts::as.xts(TTR::MFI(con_OHLC[,c("high","low","close")], candles_df[,'volume'])), "mfi")
   sar <- TTR::SAR(con_OHLC[,c('high','close')]) [,1] # Parabolic Stop-and-Reverse
   volat <- setNames(TTR::volatility(con_OHLC,calc="close"), "volat")
@@ -38,7 +44,7 @@ add_ta <- function(candles_df){
   ma50 <- TTR::SMA(close_price, n = 50)
   bullish <- ifelse(ma20 > ma50, 1, 0) # Create a bullish dummy variable based on the moving average crossover
   volume <- con_OHLC$volume
-    
+  
   TA <- data.frame(sma,
                    ema,
                    bb_dn,
@@ -71,7 +77,7 @@ add_ta <- function(candles_df){
                    bullish,
                    volume)
   
-  TA <- xts::reclass(TA, suppressWarnings(xts::as.xts(candles_df)))
+  TA <- xts::reclass(TA, con_OHLC_quantmod)
   return(TA)
 }
 
