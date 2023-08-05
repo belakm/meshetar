@@ -1,5 +1,5 @@
 use crate::{
-    binance_client::BINANCE_CLIENT,
+    binance_client::{BINANCE_CLIENT, BINANCE_WSS_BASE_URL},
     database::DB_POOL,
     formatting::{timestamp_to_dt, timestamp_to_string},
     meshetar::Meshetar,
@@ -68,8 +68,6 @@ struct WebsocketResponse {
     s: String, // Symbol
     k: WebsocketKline,
 }
-
-const BINANCE_WSS_BASE_URL: &str = "wss://stream.binance.com:9443/ws";
 
 pub async fn run(
     task_control: Arc<Mutex<TaskControl>>,
@@ -301,10 +299,7 @@ pub async fn fetch_history(
                 }
             },
             _ = sleep(Duration::from_secs(1)) => {
-                log::info!(
-                  "Loading candles from: {:?}",
-                    timestamp_to_string(start_time)
-                    );
+                log::info!("Loading candles from: {:?}", timestamp_to_string(start_time));
                 let request = market::klines(&symbol, interval)
                     .start_time(start_time as u64)
                     .limit(1000);

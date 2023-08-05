@@ -43,23 +43,15 @@ pub async fn setup_tables() -> Result<(), String> {
                 "BEGIN;
         CREATE TABLE IF NOT EXISTS balances (
             id INTEGER PRIMARY KEY,
-            asset TEXT NOT NULL,
-            free TEXT NOT NULL,
-            locked TEXT NOT NULL,
-            snapshot_id INTEGER NOT NULL,
-            FOREIGN KEY(snapshot_id) REFERENCES snapshots(id)
+            symbol TEXT NOT NULL,
+            free REAL NOT NULL,
+            locked REAL NOT NULL,
+            balance_sheet_id INTEGER,
+            FOREIGN KEY (balance_sheet_id) REFERENCES balance_sheets (id)
         );
-        CREATE TABLE IF NOT EXISTS snapshots (
+        CREATE TABLE IF NOT EXISTS balance_sheets (
             id INTEGER PRIMARY KEY,
-            total_asset_of_btc TEXT NOT NULL,
-            update_time INTEGER NOT NULL,
-            wallet_type TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS account_history (
-            id INTEGER PRIMARY KEY,
-            code INTEGER NOT NULL,
-            msg TEXT NOT NULL,
-            last_queried DATETIME NOT NULL
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS klines (
             symbol TEXT NOT NULL,
@@ -83,6 +75,26 @@ pub async fn setup_tables() -> Result<(), String> {
             time INTEGER NOT NULL,
             signal TEXT NOT NULL,
             PRIMARY KEY (symbol, interval, time)
+        );
+        CREATE TABLE IF NOT EXISTS asset_ticker (
+            symbol TEXT NOT NULL,
+            price_change REAL NOT NULL,
+            price_change_percent REAL NOT NULL,
+            weighted_average_price REAL NOT NULL,
+            first_price REAL NOT NULL,
+            last_price REAL NOT NULL,
+            last_quantity REAL NOT NULL,
+            best_bid_price REAL NOT NULL,
+            best_bid_quantity REAL NOT NULL,
+            best_ask_price REAL NOT NULL,
+            best_ask_quantity REAL NOT NULL,
+            open_price REAL NOT NULL,
+            high_price REAL NOT NULL,
+            low_price REAL NOT NULL,
+            total_traded_base_volume REAL NOT NULL,
+            total_traded_quote_volume REAL NOT NULL,
+            number_of_trades INTEGER NOT NULL,
+            PRIMARY KEY (symbol)
         );
         COMMIT;",
             )

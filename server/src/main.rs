@@ -1,5 +1,6 @@
 // Main modules
 //
+mod asset_ticker;
 mod binance_client;
 mod book;
 mod database;
@@ -7,9 +8,10 @@ mod formatting;
 mod load_config;
 mod meshetar;
 mod plot;
-// mod portfolio;
+mod portfolio;
 mod prediction_model;
 mod rlang_runner;
+mod serde_utils;
 
 use book::latest_kline_date;
 use env_logger::Builder;
@@ -18,6 +20,7 @@ use meshetar::Interval;
 use meshetar::Meshetar;
 use meshetar::MeshetarStatus;
 use meshetar::Pair;
+use portfolio::BalanceSheetWithBalances;
 use rocket::catch;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::form::Form;
@@ -99,12 +102,29 @@ async fn main() -> Result<(), String> {
     builder.filter(Some("sqlx"), LevelFilter::Warn);
     builder.init();
 
-    log::info!("Igniting rocket.");
     binance_client::initialize().await?;
     database::initialize().await?;
     let meshetar = Arc::new(Mutex::new(Meshetar::new()));
     let (sender, receiver) = watch::channel(false);
     let task_control = Arc::new(Mutex::new(TaskControl { sender, receiver }));
+
+    // Hook to assets ticker
+    tokio::spawn(async {
+        match asset_ticker::subscribe().await {
+            _ => log::warn!("Price fetching ended."),
+        }
+    });
+
+    // Periodically get account status
+    tokio::spawn(async {
+        loop {
+            match portfolio::fetch_balances().await {
+                Err(e) => log::warn!("Error fetching balance: {:?}", e),
+                _ => (),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5000));
+        }
+    });
 
     match rocket::build()
         .attach(CORS)
@@ -123,7 +143,8 @@ async fn main() -> Result<(), String> {
                 last_kline_time,
                 run,
                 create_new_model,
-                plot_chart
+                plot_chart,
+                balance_sheet
             ],
         )
         .mount("/", FileServer::new("static", Options::None).rank(1))
@@ -253,6 +274,14 @@ async fn clear_history(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Json<
         };
     });
     Accepted(Some(meshetar.lock().await.summerize_json()))
+}
+
+#[get("/balance_sheet")]
+async fn balance_sheet() -> Result<Accepted<Json<BalanceSheetWithBalances>>, Custom<String>> {
+    match portfolio::get_balance_sheet().await {
+        Ok(balance_sheet) => Ok(Accepted(Some(Json(balance_sheet.clone())))),
+        Err(e) => Err(Custom(Status::NotFound, format!("{:?}", e))),
+    }
 }
 
 #[get("/status")]

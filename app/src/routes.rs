@@ -1,22 +1,27 @@
+use crate::store_models::{BalanceSheetWithBalances, Interval, Meshetar, Pair};
 use reqwest::Response;
-
-use crate::store_models::{Interval, Meshetar, Pair};
 
 async fn parse_status(payload: Response) -> Result<Meshetar, String> {
     match payload.text().await {
-        Ok(meshetar) => {
-            let meshetar = serde_json::from_str(&meshetar);
-            match meshetar {
-                Ok(meshetar) => Ok(meshetar),
-                Err(e) => Err(String::from(format!("Error parsing response {:?}", e))),
-            }
-        }
+        Ok(meshetar) => match serde_json::from_str(&meshetar) {
+            Ok(meshetar) => Ok(meshetar),
+            Err(e) => Err(String::from(format!("Error parsing response {:?}", e))),
+        },
         Err(e) => Err(e.to_string()),
     }
 }
 async fn parse_response_string(payload: Response) -> Result<String, String> {
     match payload.text().await {
         Ok(payload) => Ok(payload),
+        Err(e) => Err(e.to_string()),
+    }
+}
+async fn parse_balance_sheet(payload: Response) -> Result<BalanceSheetWithBalances, String> {
+    match payload.text().await {
+        Ok(balance_sheet) => match serde_json::from_str(&balance_sheet) {
+            Ok(balance_sheet) => Ok(balance_sheet),
+            Err(e) => Err(e.to_string()),
+        },
         Err(e) => Err(e.to_string()),
     }
 }
@@ -27,6 +32,17 @@ pub async fn get_status() -> Result<Meshetar, String> {
         Ok(resp) => {
             let meshetar = parse_status(resp).await?;
             Ok(meshetar)
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub async fn fetch_balance_sheet() -> Result<BalanceSheetWithBalances, String> {
+    let resp = reqwest::get("http://localhost:8000/balance_sheet").await;
+    match resp {
+        Ok(resp) => {
+            let balance_sheet = parse_balance_sheet(resp).await?;
+            Ok(balance_sheet)
         }
         Err(e) => Err(e.to_string()),
     }
