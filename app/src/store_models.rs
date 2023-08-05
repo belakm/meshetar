@@ -34,12 +34,9 @@ pub struct Meshetar {
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 pub struct Balance {
     pub id: i64,
-    pub symbol: String,
+    pub asset: String,
     pub free: f64,
     pub locked: f64,
-    pub freeze: f64,
-    pub withdrawing: f64,
-    pub ipoable: f64,
     pub btc_valuation: f64,
     pub balance_sheet_id: i64,
 }
@@ -48,7 +45,8 @@ pub struct Balance {
 pub struct BalanceSheet {
     pub id: i64,
     pub timestamp: NaiveDateTime,
-    pub total_btc_valuation: f64,
+    pub btc_valuation: f64,
+    pub busd_valuation: f64,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -63,7 +61,8 @@ impl Default for BalanceSheetWithBalances {
             sheet: BalanceSheet {
                 id: 0,
                 timestamp: NaiveDateTime::from_timestamp_millis(0).unwrap(),
-                total_btc_valuation: 0f64,
+                btc_valuation: 0f64,
+                busd_valuation: 0f64,
             },
             balances: Vec::new(),
         }
