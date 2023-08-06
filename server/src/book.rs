@@ -303,7 +303,7 @@ pub async fn fetch_history(
                 let request = market::klines(&symbol, interval)
                     .start_time(start_time as u64)
                     .limit(1000);
-                let mut klines = String::new();
+                let klines;
                 {
                     let data = client
                         .send(request)
@@ -359,9 +359,10 @@ struct SimpleSignal {
     signal: String,
 }
 
-pub async fn plot_data(
+pub async fn generate_plot_data(
     pair: String,
     interval: String,
+    page: i64,
 ) -> Result<
     (
         Vec<(DateTime<Utc>, (f32, f32, f32, f32))>,
@@ -369,32 +370,54 @@ pub async fn plot_data(
     ),
     String,
 > {
-    let connection = DB_POOL.get().unwrap();
-    let klines: Vec<SimpleKline> = sqlx::query_as::<_, SimpleKline>(
-        "SELECT open_time, open, high, low, close 
-        FROM klines 
-        WHERE interval = ?1 AND symbol = ?2 
-        ORDER BY open_time DESC 
-        LIMIT 80",
-    )
-    .bind(interval.clone())
-    .bind(pair.clone())
-    .fetch_all(connection)
-    .await
-    .map_err(|e| format!("Error fetching last kline. {:?}", e))?;
+    let klines: Vec<SimpleKline>;
+    let signals: Vec<SimpleSignal>;
+    let total_pages: i64;
+    let points_per_page: i64 = 180;
+    {
+        let connection = DB_POOL.get().unwrap();
+        let pages_row: (i64,) =
+            sqlx::query_as("SELECT CAST((COUNT(*) + ?1 - 1) / ?1 AS INTEGER) AS pages FROM klines WHERE symbol = ?2")
+                .bind(&points_per_page)
+                .bind(&pair)
+                .fetch_one(connection)
+                .map_err(|e| format!("Error getting total number of pages for klines, {:?}", e))
+                .await?;
+        total_pages = pages_row.0;
+        let page_to_go = page.clamp(1, total_pages);
+        klines = sqlx::query_as::<_, SimpleKline>(
+            "SELECT open_time, open, high, low, close 
+            FROM klines 
+            WHERE interval = ?1 AND symbol = ?2 
+            ORDER BY open_time DESC 
+            LIMIT ?3
+            OFFSET ?4",
+        )
+        .bind(interval.clone())
+        .bind(pair.clone())
+        .bind(points_per_page)
+        .bind(points_per_page * (page_to_go - 1))
+        .fetch_all(connection)
+        .await
+        .map_err(|e| format!("Error fetching last kline. {:?}", e))?;
 
-    let signals: Vec<SimpleSignal> = sqlx::query_as::<_, SimpleSignal>(
-        "SELECT signal, time 
-        FROM signals 
-        WHERE interval = ?1 AND symbol = ?2 
-        ORDER BY time DESC 
-        LIMIT 80",
-    )
-    .bind(interval)
-    .bind(pair)
-    .fetch_all(connection)
-    .await
-    .map_err(|e| format!("Error fetching last kline. {:?}", e))?;
+        let min_time: i64 = klines.first().map(|i| i.open_time).unwrap_or(0);
+        let max_time: i64 = klines.last().map(|i| i.open_time).unwrap_or(0);
+
+        signals = sqlx::query_as::<_, SimpleSignal>(
+            "SELECT signal, time 
+            FROM signals 
+            WHERE interval = ?1 AND symbol = ?2 AND time >= ?3 AND time <= ?4
+            ORDER BY time DESC",
+        )
+        .bind(interval)
+        .bind(pair)
+        .bind(min_time)
+        .bind(max_time)
+        .fetch_all(connection)
+        .await
+        .map_err(|e| format!("Error fetching last kline. {:?}", e))?;
+    }
 
     let mut rows: Vec<(DateTime<Utc>, (f32, f32, f32, f32))> = klines
         .into_iter()

@@ -1,4 +1,9 @@
-pacman::p_load(RSQLite, TTR, xts, quantmod, here)
+library("RSQLite")
+library("TTR")
+library("xts")
+library("quantmod")
+library("here")
+# pacman::p_load(RSQLite, TTR, xts, quantmod, here)
 suppressMessages(
   here::i_am("models/default_create.R")
 )

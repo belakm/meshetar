@@ -23,7 +23,7 @@ pub async fn plot_chart(
         stroke_width: 1,
     };
     let guide_style = ShapeStyle {
-        color: WHITE.mix(0.1),
+        color: WHITE.mix(0.2),
         filled: true,
         stroke_width: 1,
     };
@@ -35,7 +35,7 @@ pub async fn plot_chart(
     let lose_style = ShapeStyle {
         color: RED.mix(1f64),
         filled: false,
-        stroke_width: 2,
+        stroke_width: 1,
     };
 
     let hold_indicator = ShapeStyle {
@@ -65,8 +65,8 @@ pub async fn plot_chart(
     global_min = global_min;
     global_max = global_max;
 
-    let root_area = SVGBackend::new(PLOT_PATH, (1024, 320)).into_drawing_area();
-    root_area.fill(&RGBColor(17, 25, 31)).unwrap();
+    let root_area = SVGBackend::new(PLOT_PATH, (1024, 480)).into_drawing_area();
+    root_area.fill(&RGBColor(20, 30, 38)).unwrap();
     let root_area = root_area.margin(10, 10, 10, 10);
 
     let (from_date, to_date) = (
@@ -101,7 +101,7 @@ pub async fn plot_chart(
 
     chart
         .draw_series(data.iter().map(|(x, (o, h, l, c))| {
-            CandleStick::new(*x, *o, *h, *l, *c, gain_style, lose_style, 6)
+            CandleStick::new(*x, *o, *h, *l, *c, gain_style, lose_style, 3)
         }))
         .unwrap();
 

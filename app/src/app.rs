@@ -3,7 +3,9 @@ use crate::routes::{
     plot_chart,
 };
 use crate::store::Store;
-use crate::store_models::{BalanceSheetWithBalances, Interval, Meshetar, Pair, Status};
+use crate::store_models::{
+    BalanceSheetWithBalances, ChartPagination, Interval, Meshetar, Pair, Status,
+};
 use crate::utils::{console_log, get_timestamp, readable_date, to_fiat_format};
 use gloo_timers::future::TimeoutFuture;
 use sycamore::futures::spawn_local_scoped;
@@ -38,6 +40,7 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
         server_state: create_rc_signal(Status::Idle),
         last_kline_time: create_rc_signal(String::from("0")),
         balance_sheet: create_rc_signal(BalanceSheetWithBalances::default()),
+        chart_pagination: create_rc_signal(ChartPagination::default()),
     };
     let store = provide_context(cx, store);
 
@@ -76,7 +79,7 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                 }
                 _ => (),
             }
-            match plot_chart().await {
+            match plot_chart(store.chart_pagination.get().page).await {
                 Ok(path) => chart_path.set(path),
                 _ => (),
             }
@@ -157,6 +160,28 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
         spawn_local_scoped(cx, async move {
             match routes::clear_history().await {
                 Ok(meshetar) => sync_store(store, meshetar),
+                _ => (),
+            }
+        });
+    };
+    let chart_pagination_increase = move |_| {
+        store
+            .chart_pagination
+            .set(store.chart_pagination.get().next());
+        spawn_local_scoped(cx, async move {
+            match plot_chart(store.chart_pagination.get().page).await {
+                Ok(path) => chart_path.set(path),
+                _ => (),
+            }
+        });
+    };
+    let chart_pagination_decrease = move |_| {
+        store
+            .chart_pagination
+            .set(store.chart_pagination.get().prev());
+        spawn_local_scoped(cx, async move {
+            match plot_chart(store.chart_pagination.get().page).await {
+                Ok(path) => chart_path.set(path),
                 _ => (),
             }
         });
@@ -248,6 +273,16 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                 }
                 Divider{}
                 div(class="chart-container") {
+                    div(class="grid") {
+                        div {}
+                        div {}
+                        button(class="contrast", on:click=chart_pagination_decrease, disabled=store.chart_pagination.get().prev_disabled()) {
+                            "◀️ Prev"
+                        }
+                        button(class="contrast", on:click=chart_pagination_increase, disabled=store.chart_pagination.get().next_disabled()) {
+                            "▶️ Next"
+                        }
+                    }
                     img(src=format!("http://localhost:8000/{}?ver={}", *chart_path.get(), get_timestamp()))
                 }
             }

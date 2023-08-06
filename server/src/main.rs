@@ -13,7 +13,6 @@ mod prediction_model;
 mod rlang_runner;
 mod serde_utils;
 
-use book::latest_kline_date;
 use env_logger::Builder;
 use log::LevelFilter;
 use meshetar::Interval;
@@ -237,7 +236,7 @@ async fn fetch_history(
     let reciever = Arc::clone(&task_control.inner());
 
     tokio::spawn(async move {
-        let fetch_start = (chrono::Utc::now() - chrono::Duration::days(1)).timestamp();
+        let fetch_start = (chrono::Utc::now() - chrono::Duration::days(2)).timestamp();
         match book::fetch_history(reciever, meshetar_clone2, fetch_start).await {
             Ok(_) => log::info!("History fetching success."),
             Err(e) => log::info!("History fetching err: {:?}", e),
@@ -291,13 +290,24 @@ async fn meshetar_status(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Jso
     Accepted(Some(meshetar.summerize_json()))
 }
 
-#[get("/plot_chart")]
-async fn plot_chart(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Result<String, ()> {
+#[derive(FromForm, Deserialize)]
+struct PlotChartPayload<'r> {
+    page: &'r str,
+}
+#[post("/plot_chart", data = "<data>")]
+async fn plot_chart(
+    meshetar: &State<Arc<Mutex<Meshetar>>>,
+    data: Form<PlotChartPayload<'_>>,
+) -> Result<String, ()> {
+    let page = match data.page.parse::<i64>() {
+        Ok(page) => page,
+        Err(_) => 0,
+    };
     let meshetar = meshetar.lock().await;
     let pair = meshetar.pair.to_string();
     let interval = meshetar.interval.to_kline_interval().to_string();
     drop(meshetar);
-    match book::plot_data(pair, interval).await {
+    match book::generate_plot_data(pair, interval, page).await {
         Ok((data, signal_data)) => match plot::plot_chart(data, signal_data).await {
             Ok(path) => Ok(path),
             Err(e) => Err(log::warn!("Error plotting chart. {e}")),
@@ -308,7 +318,7 @@ async fn plot_chart(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Result<String, ()
 
 #[get("/last_kline_time")]
 async fn last_kline_time() -> Accepted<String> {
-    match latest_kline_date().await {
+    match book::latest_kline_date().await {
         Ok(last_kline_time) => Accepted(Some(last_kline_time.to_string())),
         Err(_) => Accepted(Some(String::from("0"))),
     }

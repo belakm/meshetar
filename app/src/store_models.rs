@@ -68,3 +68,37 @@ impl Default for BalanceSheetWithBalances {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct ChartPagination {
+    pub page: i64,
+    pub total_pages: i64,
+}
+impl ChartPagination {
+    pub fn next_disabled(&self) -> bool {
+        self.page <= 1
+    }
+    pub fn next(&self) -> ChartPagination {
+        ChartPagination {
+            total_pages: self.total_pages,
+            page: self.page - 1,
+        }
+    }
+    pub fn prev_disabled(&self) -> bool {
+        self.page >= self.total_pages
+    }
+    pub fn prev(&self) -> ChartPagination {
+        ChartPagination {
+            page: self.page + 1,
+            total_pages: self.total_pages,
+        }
+    }
+}
+impl Default for ChartPagination {
+    fn default() -> Self {
+        Self {
+            page: 1,
+            total_pages: 2,
+        }
+    }
+}

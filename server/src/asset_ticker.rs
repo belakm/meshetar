@@ -128,7 +128,7 @@ pub async fn subscribe() -> Result<(), String> {
                         Err(e) => {
                             log::error!("Error inserting new assets, {:?}", e);
                         }
-                        _ => log::info!("New ticker data"),
+                        _ => (),
                     },
                     Err(e) => log::warn!("Error parsing PRICE SOCKET: {:?}", e),
                 }

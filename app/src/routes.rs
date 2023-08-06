@@ -113,8 +113,15 @@ pub async fn run() -> Result<Meshetar, String> {
     }
 }
 
-pub async fn plot_chart() -> Result<String, String> {
-    let resp = reqwest::get("http://localhost:8000/plot_chart").await;
+pub async fn plot_chart(page: i64) -> Result<String, String> {
+    let params = [("page", page.to_string())];
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("http://localhost:8000/plot_chart")
+        .form(&params)
+        .send()
+        .await;
+
     match resp {
         Ok(resp) => {
             let resp = parse_response_string(resp).await?;
