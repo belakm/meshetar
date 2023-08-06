@@ -173,42 +173,11 @@ suppressWarnings(
 # save the optimal holding period to the model object
 model$optimal_hold_period <- optimal_signal_params$opt_hold_period
 
-# Plot the signals the model was trained on:
-plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE){
-  
-  # candle_hour_minute <- format(as.POSIXct(ohlc_data$open_time),"%H:%M")
-  df <- data.frame(plot_time = as.POSIXct(ohlc_data$open_time),
-                   plot_price = ohlc_data$close, 
-                   plot_signal = c(0,signals$signals))
-
-  ggplot2::ggplot(df, ggplot2::aes(x = plot_time, y = plot_price)) +
-    ggplot2::geom_line() +
-    ggplot2::geom_point(data = subset(df, plot_signal == 1),
-                        ggplot2::aes(x = plot_time, y = plot_price), color = "green", shape = "+", size = 4, stroke = 4) +
-    ggplot2::geom_point(data = subset(df, plot_signal == -1),
-                        ggplot2::aes(x = plot_time, y = plot_price),
-                        color = "red", shape = "-", size = 10, stroke = 4) +
-    ggplot2::labs(x = "Time", y = "Price", title = "Price over time with Buy/Sell Signals", subtitle = paste("Holding period:", signals$opt_hold_period)) +
-    scale_x_datetime(breaks = scales::date_breaks(paste(nrow(candles_df)/4, "min")), labels = scales::date_format("%Y-%m-%d %H:%M"))
-}
-
-historical_signal_plot <- plot_trading_signal(
-  ohlc_data = candles_df,
-  signals =  optimal_signal_params)
-
-# Save the svg plot to the folder /server
-suppressMessages(
-  ggplot2::ggsave(
-    filename = "historical_trading_signals_model_was_trained", 
-    plot = historical_signal_plot, 
-    device = "svg")
-)
-
 ########################### 
 ### Find optimal cutoff ###
 ###########################
 
-test <- signal_with_TA[max(train_index):nrow(signal_with_TA),]
+test <- signal_with_TA[(max(train_index)+1):nrow(signal_with_TA),]
 
 suppressWarnings(
   predictions <- predict(model, test,
@@ -229,5 +198,49 @@ if(all(test$signal == 0)){
 
 # Save the trained model to a file-
 saveRDS(model, "models/prediction_model.rds")
+
+
+# Plot the signals the model was trained on:
+plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE){
+  
+  test_predictions <-  data.frame(plot_time = as.POSIXct(names(predictions)),
+                                  test_predictions = ifelse(predictions > model$optimal_cutoff, 1, 0))
+  
+  # candle_hour_minute <- format(as.POSIXct(ohlc_data$open_time),"%H:%M")
+  df <- data.frame(plot_time = as.POSIXct(ohlc_data$open_time),
+                   plot_price = ohlc_data$close, 
+                   plot_signal = c(0,signals$signals))
+  
+  df <- merge(df, test_predictions, by= "plot_time", all = TRUE)
+  
+  print(tail(df))
+  ggplot2::ggplot(df, ggplot2::aes(x = plot_time, y = plot_price)) +
+    ggplot2::geom_line() +
+    ggplot2::geom_point(data = subset(df, plot_signal == 1),
+                        ggplot2::aes(x = plot_time, y = plot_price), color = "green", shape = "+", size = 4, stroke = 4) +
+    ggplot2::geom_point(data = subset(df, plot_signal == -1),
+                        ggplot2::aes(x = plot_time, y = plot_price),
+                        color = "red", shape = "-", size = 10, stroke = 4) +
+    ggplot2::geom_point(data = subset(df, test_predictions == 1),
+                        ggplot2::aes(x = plot_time, y = plot_price),
+                        color = "blue", shape = "+", size = 4, stroke = 4) +
+    ggplot2::labs(x = "Time", y = "Price", title = "Price over time with Buy/Sell Signals", subtitle = paste("Holding period:", signals$opt_hold_period)) +
+    ggplot2::scale_x_datetime(breaks = scales::date_breaks(paste(nrow(candles_df)/6, "min")), 
+                              labels = scales::date_format("%Y-%m-%d %H:%M")) +
+    geom_vline(xintercept = df[max(train_index), 'plot_time'], color = "red") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.1))
+}
+
+historical_signal_plot <- plot_trading_signal(
+  ohlc_data = candles_df,
+  signals =  optimal_signal_params)
+
+# Save the svg plot to the folder /server
+suppressMessages(
+  ggplot2::ggsave(
+    filename = "historical_trading_signals_model_was_trained", 
+    plot = historical_signal_plot, 
+    device = "svg")
+)
 
 cat("Model done")
