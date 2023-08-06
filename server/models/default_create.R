@@ -10,8 +10,10 @@
 # library("dplyr")
 # library("magrittr")
 # library("here")
+# library("ggplot2")
+# library("svglite")
 pacman::p_load(RSQLite, TTR, quantmod, xgboost, ROCR, Information, PerformanceAnalytics,
-               rpart, randomForest, dplyr, magrittr, here)
+               rpart, randomForest, dplyr, magrittr, here, ggplot2, svglite)
 suppressMessages(
   here::i_am("models/default_create.R")
 )
@@ -27,7 +29,7 @@ query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
                  volume
           FROM klines
           WHERE symbol = 'BTCUSDT'
-          ORDER BY open_time ASC;"
+          ORDER BY open_time DESC;"
 data <- dbGetQuery(conn, query)
 
 # Disconnect from the database
@@ -54,10 +56,12 @@ candles_df <- data
 source(paste0(here::here(), "/models/functions/optimal_trading_signal.R"))
 source(paste0(here::here(), "/models/functions/add_ta.R"))
 
+half_the_candles <- nrow(candles_df)/2
+
 # Find the target (optimal signal)
 optimal_signal_params <- optimal_trading_signal(
   candles_df, 
-  max_holding_period = nrow(candles_df)/2) # half the candle instances 
+  max_holding_period = half_the_candles) 
 
 signal <- optimal_signal_params$signals
 
@@ -161,21 +165,55 @@ importance <- importance[order(importance$Gain, decreasing = TRUE), ]
 #for the model i will be using features above median of cross validation error rate
 formula_str <- paste("signal ~",paste(colnames(train[,-1]), collapse = " + "))
 model_formula  <- as.formula(formula_str)
+suppressWarnings(
+  model <- glm(formula = model_formula ,
+                          data = train,
+                          family = binomial(link = "logit")))
 
-model <- glm(formula = model_formula ,
-                        data = train,
-                        family = binomial(link = "logit"))
 # save the optimal holding period to the model object
 model$optimal_hold_period <- optimal_signal_params$opt_hold_period
 
+# Plot the signals the model was trained on:
+plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE){
+  
+  # candle_hour_minute <- format(as.POSIXct(ohlc_data$open_time),"%H:%M")
+  df <- data.frame(plot_time = as.POSIXct(ohlc_data$open_time),
+                   plot_price = ohlc_data$close, 
+                   plot_signal = c(0,signals$signals))
+
+  ggplot2::ggplot(df, ggplot2::aes(x = plot_time, y = plot_price)) +
+    ggplot2::geom_line() +
+    ggplot2::geom_point(data = subset(df, plot_signal == 1),
+                        ggplot2::aes(x = plot_time, y = plot_price), color = "green", shape = "+", size = 4, stroke = 4) +
+    ggplot2::geom_point(data = subset(df, plot_signal == -1),
+                        ggplot2::aes(x = plot_time, y = plot_price),
+                        color = "red", shape = "-", size = 10, stroke = 4) +
+    ggplot2::labs(x = "Time", y = "Price", title = "Price over time with Buy/Sell Signals", subtitle = paste("Holding period:", signals$opt_hold_period)) +
+    scale_x_datetime(breaks = scales::date_breaks(paste(nrow(candles_df)/4, "min")), labels = scales::date_format("%Y-%m-%d %H:%M"))
+}
+
+historical_signal_plot <- plot_trading_signal(
+  ohlc_data = candles_df,
+  signals =  optimal_signal_params)
+
+# Save the svg plot to the folder /server
+suppressMessages(
+  ggplot2::ggsave(
+    filename = "historical_trading_signals_model_was_trained", 
+    plot = historical_signal_plot, 
+    device = "svg")
+)
 
 ########################### 
 ### Find optimal cutoff ###
 ###########################
 
 test <- signal_with_TA[max(train_index):nrow(signal_with_TA),]
-predictions <- predict(model, test,
-                       type = 'response')
+
+suppressWarnings(
+  predictions <- predict(model, test,
+                         type = 'response')
+)
 
 # If there are no buy signals in the test period
 if(all(test$signal == 0)){
@@ -183,7 +221,9 @@ if(all(test$signal == 0)){
   model$optimal_cutoff <- median(predictions)
 } else {
   # Find optimal cut
-  pred <- pROC::roc(as.numeric(test[,"signal"]), predictions)
+  suppressMessages(
+    pred <- pROC::roc(as.numeric(test[,"signal"]), predictions)
+  )
   model$optimal_cutoff <- optimal_cutoff <- pROC::coords(pred, "best", ret = "threshold", input.sort = FALSE)
 }
 
