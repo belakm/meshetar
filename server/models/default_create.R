@@ -182,7 +182,7 @@ plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE){
                    plot_signal = c(0,signals$signals))
 
   ggplot2::ggplot(df, ggplot2::aes(x = plot_time, y = plot_price)) +
-    ggplot2::geom_line() +
+    ggplot2::geom_line(color = "white") +
     ggplot2::geom_point(data = subset(df, plot_signal == 1),
                         ggplot2::aes(x = plot_time, y = plot_price), color = "green", shape = "+", size = 4, stroke = 4) +
     ggplot2::geom_point(data = subset(df, plot_signal == -1),
@@ -196,12 +196,31 @@ historical_signal_plot <- plot_trading_signal(
   ohlc_data = candles_df,
   signals =  optimal_signal_params)
 
+# Create a dark mode theme
+dark_theme <- theme(
+  panel.background = element_rect(fill = "#141e26"),
+  plot.background = element_rect(fill = "#141e26"),
+  text = element_text(color = "white"),
+  axis.text = element_text(color = "white"),
+  axis.title = element_text(color = "white"),
+  panel.grid.major = element_line(color = "grey30"),
+  panel.grid.minor = element_line(color = "grey30"),
+  legend.background = element_rect(fill = "#141e26"),
+  legend.text = element_text(color = "white")
+)
+
+# Apply the dark theme to your original plot
+historical_signal_plot <- historical_signal_plot + dark_theme
+
 # Save the svg plot to the folder /server
 suppressMessages(
   ggplot2::ggsave(
-    filename = "/static/historical_trading_signals_model.svg", 
+    filename = "static/historical_trading_signals_model.svg", 
     plot = historical_signal_plot, 
-    device = "svg")
+    device = "svg",
+    width = 1024 / 72, # Width in inches
+    height = 480 / 72  # Height in inches
+  )
 )
 
 ########################### 

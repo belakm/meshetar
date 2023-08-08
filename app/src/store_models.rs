@@ -73,6 +73,7 @@ impl Default for BalanceSheetWithBalances {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Chart {
     pub path: String,
+    pub model_path: String,
     pub page: i64,
     pub total_pages: i64,
     #[serde(default = "default_false")]
@@ -88,6 +89,7 @@ impl Chart {
     pub fn set_is_loading(&self, is_loading: bool) -> Chart {
         Chart {
             path: self.path.clone(),
+            model_path: self.path.clone(),
             page: self.page.clone(),
             total_pages: self.total_pages.clone(),
             is_loading,
@@ -101,6 +103,7 @@ impl Default for Chart {
             total_pages: 1,
             is_loading: true,
             path: String::new(),
+            model_path: String::new(),
         }
     }
 }

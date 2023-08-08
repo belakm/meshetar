@@ -276,6 +276,7 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                         }
                     }
                     img(src=format!("http://localhost:8000/{}?ver={}", store.chart.get().path, get_timestamp()))
+                    img(src=format!("http://localhost:8000/{}?ver={}", store.chart.get().model_path, get_timestamp()))
                 }
             }
         }

@@ -299,6 +299,7 @@ struct PlotChartPayload<'r> {
 #[derive(Serialize)]
 pub struct ChartPlotWithPagination {
     path: String,
+    model_path: String,
     page: i64,
     total_pages: i64,
 }
@@ -320,6 +321,7 @@ async fn plot_chart(
             match plot::plot_chart(chart_plot_data.klines, chart_plot_data.signals).await {
                 Ok(path) => Ok(Json(ChartPlotWithPagination {
                     path,
+                    model_path: "historical_trading_signals_model.svg".to_string(),
                     page: chart_plot_data.page,
                     total_pages: chart_plot_data.total_pages,
                 })),
