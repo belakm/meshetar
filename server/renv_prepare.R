@@ -23,7 +23,8 @@ renv::install(c(
   "dplyr", 
   "magrittr", 
   "here",
-  "xts"
+  "xts",
+  "svglite"
 ))
 
 # Save a snapshot of the current environment to renv.lock
