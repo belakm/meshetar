@@ -13,7 +13,7 @@ library("here")
 library("ggplot2")
 library("svglite")
 #pacman::p_load(RSQLite, TTR, quantmod, xgboost, ROCR, Information, PerformanceAnalytics,
-               rpart, randomForest, dplyr, magrittr, here, ggplot2, svglite)
+#               rpart, randomForest, dplyr, magrittr, here, ggplot2, svglite)
 suppressMessages(
   here::i_am("models/default_create.R")
 )
@@ -199,7 +199,7 @@ historical_signal_plot <- plot_trading_signal(
 # Save the svg plot to the folder /server
 suppressMessages(
   ggplot2::ggsave(
-    filename = "historical_trading_signals_model_was_trained", 
+    filename = "/static/historical_trading_signals_model.svg", 
     plot = historical_signal_plot, 
     device = "svg")
 )

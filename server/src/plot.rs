@@ -139,7 +139,7 @@ struct SimpleKline {
     close: f32,
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(sqlx::FromRow, Debug)]
 struct SimpleSignal {
     time: i64,
     signal: String,
@@ -188,8 +188,10 @@ pub async fn generate_plot_data(
         .await
         .map_err(|e| format!("Error fetching last kline. {:?}", e))?;
 
-        let min_time: i64 = klines.first().map(|i| i.open_time).unwrap_or(0);
-        let max_time: i64 = klines.last().map(|i| i.open_time).unwrap_or(0);
+        let max_time: i64 = klines.first().map(|i| i.open_time).unwrap_or(0);
+        let min_time: i64 = klines.last().map(|i| i.open_time).unwrap_or(0);
+
+        log::warn!("MIN TIME MAX TIME {} {}", min_time, max_time);
 
         signals = sqlx::query_as::<_, SimpleSignal>(
             "SELECT signal, time 
@@ -220,6 +222,7 @@ pub async fn generate_plot_data(
     let mut signal_rows: Vec<(DateTime<Utc>, TradeSignal)> = signals
         .into_iter()
         .map(|signal| {
+            log::warn!("SIGNAL {:?}", signal);
             (
                 timestamp_to_dt(signal.time / 1000),
                 TradeSignal::from_str(&signal.signal).unwrap(),
