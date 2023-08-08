@@ -19,6 +19,7 @@ use meshetar::Interval;
 use meshetar::Meshetar;
 use meshetar::MeshetarStatus;
 use meshetar::Pair;
+use plot::ChartPlotData;
 use portfolio::BalanceSheetWithBalances;
 use rocket::catch;
 use rocket::fairing::{Fairing, Info, Kind};
@@ -34,6 +35,7 @@ use rocket::serde::json::Json;
 use rocket::State;
 use rocket::{Request, Response};
 use serde::Deserialize;
+use serde::Serialize;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -294,11 +296,17 @@ async fn meshetar_status(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Jso
 struct PlotChartPayload<'r> {
     page: &'r str,
 }
+#[derive(Serialize)]
+pub struct ChartPlotWithPagination {
+    path: String,
+    page: i64,
+    total_pages: i64,
+}
 #[post("/plot_chart", data = "<data>")]
 async fn plot_chart(
     meshetar: &State<Arc<Mutex<Meshetar>>>,
     data: Form<PlotChartPayload<'_>>,
-) -> Result<String, ()> {
+) -> Result<Json<ChartPlotWithPagination>, ()> {
     let page = match data.page.parse::<i64>() {
         Ok(page) => page,
         Err(_) => 0,
@@ -307,11 +315,17 @@ async fn plot_chart(
     let pair = meshetar.pair.to_string();
     let interval = meshetar.interval.to_kline_interval().to_string();
     drop(meshetar);
-    match book::generate_plot_data(pair, interval, page).await {
-        Ok((data, signal_data)) => match plot::plot_chart(data, signal_data).await {
-            Ok(path) => Ok(path),
-            Err(e) => Err(log::warn!("Error plotting chart. {e}")),
-        },
+    match plot::generate_plot_data(pair, interval, page).await {
+        Ok(chart_plot_data) => {
+            match plot::plot_chart(chart_plot_data.klines, chart_plot_data.signals).await {
+                Ok(path) => Ok(Json(ChartPlotWithPagination {
+                    path,
+                    page: chart_plot_data.page,
+                    total_pages: chart_plot_data.total_pages,
+                })),
+                Err(e) => Err(log::warn!("Error plotting chart. {e}")),
+            }
+        }
         Err(e) => Err(log::warn!("Error plotting chart. {e}")),
     }
 }

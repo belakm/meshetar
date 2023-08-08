@@ -1,6 +1,6 @@
 use sycamore::reactive::RcSignal;
 
-use crate::store_models::{BalanceSheetWithBalances, ChartPagination, Status};
+use crate::store_models::{BalanceSheetWithBalances, Chart, Status};
 
 #[derive(Debug, Default, Clone)]
 pub struct Store {
@@ -11,7 +11,7 @@ pub struct Store {
     pub server_state: RcSignal<Status>,
     pub last_kline_time: RcSignal<String>,
     pub balance_sheet: RcSignal<BalanceSheetWithBalances>,
-    pub chart_pagination: RcSignal<ChartPagination>,
+    pub chart: RcSignal<Chart>,
 }
 
 impl Store {

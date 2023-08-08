@@ -1,3 +1,4 @@
+use crate::utils::default_false;
 use chrono::NaiveDateTime;
 use serde::Deserialize;
 use strum::{Display, EnumString};
@@ -69,36 +70,37 @@ impl Default for BalanceSheetWithBalances {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ChartPagination {
+#[derive(Debug, Clone, Deserialize)]
+pub struct Chart {
+    pub path: String,
     pub page: i64,
     pub total_pages: i64,
+    #[serde(default = "default_false")]
+    pub is_loading: bool,
 }
-impl ChartPagination {
+impl Chart {
     pub fn next_disabled(&self) -> bool {
-        self.page <= 1
-    }
-    pub fn next(&self) -> ChartPagination {
-        ChartPagination {
-            total_pages: self.total_pages,
-            page: self.page - 1,
-        }
+        self.page <= 1 || self.is_loading
     }
     pub fn prev_disabled(&self) -> bool {
-        self.page >= self.total_pages
+        self.page >= self.total_pages || self.is_loading
     }
-    pub fn prev(&self) -> ChartPagination {
-        ChartPagination {
-            page: self.page + 1,
-            total_pages: self.total_pages,
+    pub fn set_is_loading(&self, is_loading: bool) -> Chart {
+        Chart {
+            path: self.path.clone(),
+            page: self.page.clone(),
+            total_pages: self.total_pages.clone(),
+            is_loading,
         }
     }
 }
-impl Default for ChartPagination {
+impl Default for Chart {
     fn default() -> Self {
         Self {
             page: 1,
-            total_pages: 2,
+            total_pages: 1,
+            is_loading: true,
+            path: String::new(),
         }
     }
 }
