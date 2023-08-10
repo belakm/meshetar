@@ -14,7 +14,7 @@ use binance_spot_connector_rust::{
 use futures::StreamExt; // needed for websocket to binance
 use rocket::futures::TryFutureExt;
 use serde::Deserialize;
-use sqlx::{Pool, Row, Sqlite};
+use sqlx::Row;
 use std::{sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::sleep};
 
@@ -124,15 +124,14 @@ pub async fn run(
                                     taker_buy_base_asset_volume: response.V,
                                     taker_buy_quote_asset_volume: response.Q,
                                 };
-                                let connection = DB_POOL.get().unwrap();
-                                match insert_kline_to_database(connection, kline).await {
+                                let mut vec_kline: Vec<Kline> = Vec::new();
+                                vec_kline.push(kline);
+                                match insert_klines_to_database(vec_kline).await {
                                     Ok(_) => {
-                                        drop(connection);
                                         let task_control2 = Arc::clone(&task_control);
                                         match prediction_model::run_model(task_control2).await {
                                             Ok(signal) => {
-                                                let connection = DB_POOL.get().unwrap();
-                                                match insert_signal_to_database(connection, signal, symbol.clone(), interval_string.clone(), time).await {
+                                                match insert_signal_to_database(signal, symbol.clone(), interval_string.clone(), time).await {
                                                     Ok(_) => log::info!("New signal inserted."),
                                                     Err(e) => log::warn!("{}", e)
                                                 };
@@ -166,37 +165,47 @@ pub async fn run(
     Ok(())
 }
 
-async fn insert_kline_to_database(connection: &Pool<Sqlite>, kline: Kline) -> Result<(), String> {
-    sqlx::query(
-        r#"
-        INSERT OR REPLACE INTO klines (symbol, interval, open_time, open, high, low, close, volume, close_time, quote_asset_volume, number_of_trades, taker_buy_base_asset_volume, taker_buy_quote_asset_volume)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
-        "#,
-    )
-    .bind(kline.symbol)
-    .bind(kline.interval)
-    .bind(kline.open_time)
-    .bind(kline.open)
-    .bind(kline.high)
-    .bind(kline.low)
-    .bind(kline.close)
-    .bind(kline.volume)
-    .bind(kline.close_time)
-    .bind(kline.quote_asset_volume)
-    .bind(kline.trades)
-    .bind(kline.taker_buy_base_asset_volume)
-    .bind(kline.taker_buy_quote_asset_volume)
-    .execute(connection).map_err(|e| format!("Error inserting a kline into Database. {:?}", e)).await?;
+async fn insert_klines_to_database(klines: Vec<Kline>) -> Result<(), String> {
+    let connection = DB_POOL.get().unwrap();
+    let mut tx = connection
+        .begin()
+        .map_err(|e| format!("Error on creating transaction on klines: {:?}", e))
+        .await?;
+    for kline in klines {
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO klines (symbol, interval, open_time, open, high, low, close, volume, close_time, quote_asset_volume, number_of_trades, taker_buy_base_asset_volume, taker_buy_quote_asset_volume)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            "#,
+        )
+        .bind(kline.symbol)
+        .bind(kline.interval)
+        .bind(kline.open_time)
+        .bind(kline.open)
+        .bind(kline.high)
+        .bind(kline.low)
+        .bind(kline.close)
+        .bind(kline.volume)
+        .bind(kline.close_time)
+        .bind(kline.quote_asset_volume)
+        .bind(kline.trades)
+        .bind(kline.taker_buy_base_asset_volume)
+        .bind(kline.taker_buy_quote_asset_volume)
+        .execute(tx.as_mut()).map_err(|e| format!("Error inserting a kline into Database. {:?}", e)).await?;
+    }
+    tx.commit()
+        .map_err(|e| format!("Error committing new klines: {:?}", e))
+        .await?;
     Ok(())
 }
 
 async fn insert_signal_to_database(
-    connection: &Pool<Sqlite>,
     signal: TradeSignal,
     symbol: String,
     interval: String,
     time: i64,
 ) -> Result<(), String> {
+    let connection = DB_POOL.get().unwrap();
     sqlx::query(
         r#"
         INSERT OR REPLACE INTO signals (symbol, interval, time, signal)
@@ -288,7 +297,6 @@ pub async fn fetch_history(
     drop(meshetar);
     let mut start_time: i64 = start_time.clone() * 1000;
     let client = BINANCE_CLIENT.get().unwrap();
-    let connection = DB_POOL.get().unwrap();
     log::info!("Fetching {} history.", symbol);
     loop {
         tokio::select! {
@@ -314,25 +322,22 @@ pub async fn fetch_history(
                         .await?;
                 };
                 let new_klines = parse_binance_klines(&klines, &symbol, &interval);
-                let last_kline = new_klines.last(); // we know Vec has items at
-                                                    // this point
+                let last_kline = &new_klines.last();
                 match last_kline {
                     Some(last_kline) => {
                         start_time = last_kline.close_time;
                         // insert new klines
                         if !new_klines.is_empty() {
+                            match insert_klines_to_database(new_klines).await {
+                                Ok(_) => (),
+                                Err(e) => {
+                                    println!("{:?}", e)
+                                }
+                            };
                             log::info!(
                                 "New klines inserted up to {}.",
-                                timestamp_to_string(last_kline.close_time)
+                                timestamp_to_string(start_time.clone())
                             );
-                            for kline in new_klines {
-                                match insert_kline_to_database(connection, kline).await {
-                                    Ok(_) => (),
-                                    Err(e) => {
-                                        println!("{:?}", e)
-                                    }
-                                }
-                            }
                         }
                     }
                     None => break,

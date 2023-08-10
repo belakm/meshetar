@@ -1,6 +1,7 @@
 // Main modules
 //
 mod asset_ticker;
+mod backtesting;
 mod binance_client;
 mod book;
 mod database;
@@ -19,7 +20,6 @@ use meshetar::Interval;
 use meshetar::Meshetar;
 use meshetar::MeshetarStatus;
 use meshetar::Pair;
-use plot::ChartPlotData;
 use portfolio::BalanceSheetWithBalances;
 use rocket::catch;
 use rocket::fairing::{Fairing, Info, Kind};
