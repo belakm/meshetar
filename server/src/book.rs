@@ -1,7 +1,7 @@
 use crate::{
     binance_client::{BINANCE_CLIENT, BINANCE_WSS_BASE_URL},
     database::DB_POOL,
-    formatting::{timestamp_to_dt, timestamp_to_string},
+    formatting::timestamp_to_string,
     meshetar::Meshetar,
     prediction_model::{self, TradeSignal},
     TaskControl,
@@ -11,12 +11,11 @@ use binance_spot_connector_rust::{
     market_stream::kline::KlineStream,
     tokio_tungstenite::BinanceWebSocketClient,
 };
-use chrono::{DateTime, Utc};
 use futures::StreamExt; // needed for websocket to binance
 use rocket::futures::TryFutureExt;
 use serde::Deserialize;
 use sqlx::{Pool, Row, Sqlite};
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::sleep};
 
 #[allow(unused)]
@@ -303,7 +302,7 @@ pub async fn fetch_history(
                 let request = market::klines(&symbol, interval)
                     .start_time(start_time as u64)
                     .limit(1000);
-                let mut klines = String::new();
+                let klines;
                 {
                     let data = client
                         .send(request)
@@ -342,81 +341,4 @@ pub async fn fetch_history(
         }
     }
     Ok(())
-}
-
-#[derive(sqlx::FromRow)]
-struct SimpleKline {
-    open_time: i64,
-    open: f32,
-    high: f32,
-    low: f32,
-    close: f32,
-}
-
-#[derive(sqlx::FromRow)]
-struct SimpleSignal {
-    time: i64,
-    signal: String,
-}
-
-pub async fn plot_data(
-    pair: String,
-    interval: String,
-) -> Result<
-    (
-        Vec<(DateTime<Utc>, (f32, f32, f32, f32))>,
-        Vec<(DateTime<Utc>, TradeSignal)>,
-    ),
-    String,
-> {
-    let connection = DB_POOL.get().unwrap();
-    let klines: Vec<SimpleKline> = sqlx::query_as::<_, SimpleKline>(
-        "SELECT open_time, open, high, low, close 
-        FROM klines 
-        WHERE interval = ?1 AND symbol = ?2 
-        ORDER BY open_time DESC 
-        LIMIT 80",
-    )
-    .bind(interval.clone())
-    .bind(pair.clone())
-    .fetch_all(connection)
-    .await
-    .map_err(|e| format!("Error fetching last kline. {:?}", e))?;
-
-    let signals: Vec<SimpleSignal> = sqlx::query_as::<_, SimpleSignal>(
-        "SELECT signal, time 
-        FROM signals 
-        WHERE interval = ?1 AND symbol = ?2 
-        ORDER BY time DESC 
-        LIMIT 80",
-    )
-    .bind(interval)
-    .bind(pair)
-    .fetch_all(connection)
-    .await
-    .map_err(|e| format!("Error fetching last kline. {:?}", e))?;
-
-    let mut rows: Vec<(DateTime<Utc>, (f32, f32, f32, f32))> = klines
-        .into_iter()
-        .map(|kline| {
-            (
-                timestamp_to_dt(kline.open_time / 1000),
-                (kline.open, kline.high, kline.low, kline.close),
-            )
-        })
-        .collect();
-    rows.reverse();
-
-    let mut signal_rows: Vec<(DateTime<Utc>, TradeSignal)> = signals
-        .into_iter()
-        .map(|signal| {
-            (
-                timestamp_to_dt(signal.time / 1000),
-                TradeSignal::from_str(&signal.signal).unwrap(),
-            )
-        })
-        .collect();
-    signal_rows.reverse();
-
-    Ok((rows, signal_rows))
 }

@@ -157,6 +157,56 @@ suppressWarnings(
 # save the optimal holding period to the model object
 model$optimal_hold_period <- optimal_signal_params$opt_hold_period
 
+# Plot the signals the model was trained on:
+plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE){
+  
+  # candle_hour_minute <- format(as.POSIXct(ohlc_data$open_time),"%H:%M")
+  df <- data.frame(plot_time = as.POSIXct(ohlc_data$open_time),
+                   plot_price = ohlc_data$close, 
+                   plot_signal = c(0,signals$signals))
+
+  ggplot2::ggplot(df, ggplot2::aes(x = plot_time, y = plot_price)) +
+    ggplot2::geom_line(color = "white") +
+    ggplot2::geom_point(data = subset(df, plot_signal == 1),
+                        ggplot2::aes(x = plot_time, y = plot_price), color = "green", shape = "+", size = 4, stroke = 4) +
+    ggplot2::geom_point(data = subset(df, plot_signal == -1),
+                        ggplot2::aes(x = plot_time, y = plot_price),
+                        color = "red", shape = "-", size = 10, stroke = 4) +
+    ggplot2::labs(x = "Time", y = "Price", title = "Price over time with Buy/Sell Signals", subtitle = paste("Holding period:", signals$opt_hold_period)) +
+    ggplot2::scale_x_datetime(breaks = scales::date_breaks(paste(nrow(candles_df)/4, "min")), labels = scales::date_format("%Y-%m-%d %H:%M"))
+}
+
+historical_signal_plot <- plot_trading_signal(
+  ohlc_data = candles_df,
+  signals =  optimal_signal_params)
+
+# Create a dark mode theme
+dark_theme <- ggplot2::theme(
+  panel.background = ggplot2::element_rect(fill = "#141e26"),
+  plot.background = ggplot2::element_rect(fill = "#141e26"),
+  text = ggplot2::element_text(color = "white"),
+  axis.text = ggplot2::element_text(color = "white"),
+  axis.title = ggplot2::element_text(color = "white"),
+  panel.grid.major = ggplot2::element_line(color = "grey30"),
+  panel.grid.minor = ggplot2::element_line(color = "grey30"),
+  legend.background = ggplot2::element_rect(fill = "#141e26"),
+  legend.text = ggplot2::element_text(color = "white")
+)
+
+# Apply the dark theme to your original plot
+historical_signal_plot <- historical_signal_plot + dark_theme
+
+# Save the svg plot to the folder /server
+suppressMessages(
+  ggplot2::ggsave(
+    filename = "static/historical_trading_signals_model.svg", 
+    plot = historical_signal_plot, 
+    device = "svg",
+    width = 1024 / 72, # Width in inches
+    height = 480 / 72  # Height in inches
+  )
+)
+
 ########################### 
 ### Find optimal cutoff ###
 ###########################
