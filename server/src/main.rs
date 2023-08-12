@@ -237,7 +237,7 @@ async fn fetch_history(
     let reciever = Arc::clone(&task_control.inner());
 
     tokio::spawn(async move {
-        let fetch_start = (chrono::Utc::now() - chrono::Duration::days(1)).timestamp();
+        let fetch_start = (chrono::Utc::now() - chrono::Duration::days(7)).timestamp();
         match book::fetch_history(reciever, meshetar_clone2, fetch_start).await {
             Ok(_) => log::info!("History fetching success."),
             Err(e) => log::info!("History fetching err: {:?}", e),

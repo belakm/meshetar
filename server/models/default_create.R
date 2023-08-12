@@ -1,19 +1,20 @@
-# library("RSQLite")
-# library("TTR")
-# library("quantmod")
-# library("xgboost")
-# library("ROCR")
-# library("Information")
-# library("PerformanceAnalytics")
-# library("rpart")
-# library("randomForest")
-# library("dplyr")
-# library("magrittr")
-# library("here")
-# library("ggplot2")
-# library("svglite")
-pacman::p_load(RSQLite, TTR, quantmod, xgboost, ROCR, Information, PerformanceAnalytics,
-               rpart, randomForest, dplyr, magrittr, here, ggplot2, svglite)
+library("quantmod")
+library("xgboost")
+library("ROCR")
+library("Information")
+library("PerformanceAnalytics")
+library("rpart")
+library("randomForest")
+library("dplyr")
+library("magrittr")
+library("here")
+library("ggplot2")
+library("svglite")
+library("neuralnet")
+
+# pacman::p_load(RSQLite, TTR, quantmod, xgboost, ROCR, Information, PerformanceAnalytics,
+#                rpart, randomForest, dplyr, magrittr, here, ggplot2, svglite, neuralnet)
+
 suppressMessages(
   here::i_am("models/default_create.R")
 )
@@ -45,13 +46,12 @@ rownames(data) <- as.POSIXct(data$open_time)
 # data$volume <- as.numeric(as.character(data$volume))
 
 # Exclude any rows that contain NA, NaN, or Inf values
-data <- data[complete.cases(data), ]
+candles_df <- data[complete.cases(data), ]
 # Convert 'open_time' from milliseconds since the epoch to a date-time object
 # data$open_time <- as.POSIXct(data$open_time / 1000, origin="1970-01-01", tz="UTC")
 
 # Create an xts object for technical analysis (TTR lib)
 # candles_df <- as.xts(data) |> suppressWarnings()
-candles_df <- data
 
 source(paste0(here::here(), "/models/functions/optimal_trading_signal.R"))
 source(paste0(here::here(), "/models/functions/add_ta.R"))
@@ -69,109 +69,60 @@ signal <- optimal_signal_params$signals
 tech_ind <- add_ta(candles_df = candles_df)
 # print("tech_ind_success")
 
-# Find the number of omitted cases due to MA calculations due to lags
-how_many_ommited <- sum(!complete.cases(cbind(signal, tech_ind[-1,])))
-
 if(length(signal) != nrow(tech_ind)){
   signal <- c(0, signal) # add 0 as the first signal.
 }
 
-# create a modelling data frame
-signal_with_TA <- cbind(signal, tech_ind)
+# Find the number of omitted cases due to MA calculations due to lags
+how_many_ommited <- 1:sum(!complete.cases(cbind(signal, tech_ind)))
 
-# We are interested in buy signals only (optimal holding time is fixed)
-signal_with_TA$signal <- ifelse(signal_with_TA$signal == -1, 0, signal_with_TA$signal)
+####  normalization of the tech_ind dataframe  ####
+
+tech_ind_normal <- as.data.frame(
+  apply(tech_ind, 2, scale)
+) 
+
+# create a modelling data frame
+signal_with_TA <- cbind(signal = signal, 
+                        tech_ind_normal)[-how_many_ommited,]
 
 # create a train set index for model training
-train_index <- how_many_ommited:round(0.8*(nrow(signal_with_TA)-how_many_ommited))
+train_index <- 1:round(0.7*(nrow(signal_with_TA)))
 train <- signal_with_TA[train_index,]
 
-#####################################################################
-####  XGboost model for feature importance and feature selection ####
-#####################################################################
-xgb_train <- xgb.DMatrix(data = as.matrix(train[,-1]), 
-                         label = train$signal) 
+x_train <- train[,-which(names(train) == "signal")]
+y_train <- train[,"signal"]
 
-# Do we really need xgb test?
-# xgb_test <- xgb.DMatrix(data = as.matrix(test[,-1]),
-#                     label = test$signal) #100 observations
 
-# Set a seed for reproducibility
-set.seed(123)
-cv <- xgb.cv(data = xgb_train, nfold = 5,
-             objective = "binary:logistic", 
-             nrounds = 100, 
-             early_stopping_rounds = 10,
-             maximize = FALSE, verbose = FALSE)
+test <- signal_with_TA[-train_index,]
+x_test <- test[,-which(names(train) == "signal")]
+y_test <- test[,"signal"]
 
-# Get optimal number of rounds
-nrounds <- which.min(cv$evaluation_log$test_logloss_mean)
+##### Neural Net ###################################
+formula_str <- paste("signal ~",paste(colnames(x_train), collapse = " + "))
+library(h2o) # parallel computing
+h2o.init(nthreads = -1)
+train_h2o <- as.h2o(train)
 
-# Train XGBoost model with optimal hyperparameters
-bst_select <- xgboost(data = xgb_train, 
-                      nrounds = nrounds,
-                      max_depth = 3, 
-                      eta = 0.1, 
-                      objective = "binary:logistic", 
-                      verbose = FALSE)
-importance <- xgb.importance(feature_names = colnames(xgb_train), model = bst_select)
+nnet_model <- neuralnet(formula_str,
+                        train_h2o, 
+                        hidden = length(x_train)*2,
+                        err.fct = "sse", #cross-entropy, 
+                        linear.output = TRUE,
+                        lifesign = 'full', # change this to 'none', for no output
+                        rep = 2, #number of repetitions for the neural network’s training
+                        algorithm = "rprop+",
+                        stepmax = 100000) # logit probability
 
-# Find optimal number of model features
-# Define the range of k values to test (all potential features)
-k_values <- 1:nrow(importance)
+which_rep <- which(nnet_model$result.matrix[1, ]== min(nnet_model$result.matrix[1, ])) 
+output <- compute(nnet_model, 
+                  rep = which_rep, 
+                  x_train)$net.result
 
-# Create a data frame to store the cross-validation results
-cv_results <- data.frame(k = k_values, error_rate = rep(NA, length(k_values)))
 
-params <- list(
-  objective = "binary:logistic",
-  eval_metric = "logloss",
-  max_depth = 5,
-  eta = 0.3,
-  subsample = 0.7,
-  colsample_bytree = 0.7,
-  min_child_weight = 3
-)
-# Perform cross-validation for each value of k
-for (i in seq_along(k_values)) {
-  k <- k_values[i]
-  # Get the top k features based on XGBoost importance
-  top_features <- unlist(importance[1:k, "Feature"])
-  # Subset the data to include only the top k features
-  subset_data <- train[, top_features, drop = FALSE]
-  # Train an XGBoost model using the subset data
-  subset_dtrain <- xgb.DMatrix(as.matrix(subset_data), label = train$signal)
-  cv_error <- xgb.cv(params, subset_dtrain, nfold = 5, nrounds = 10, 
-                     metrics = "error", verbose = FALSE)
-  # Store the cross-validation error rate for this value of k
-  cv_results[i, "error_rate"] <- min(cv_error$evaluation_log$test_error_mean)
-}
-cv_results <- cv_results[order(cv_results$error_rate, decreasing = TRUE) ,]
+tab1 <- table(ifelse(output > 0.5, 1, 0), train$signal)
 
-options(scipen = 3)
-# order by gain metric
-importance <- importance[order(importance$Gain, decreasing = TRUE), ]
-
-# Feature selection
-# important_train <- train[, c("signal", 
-#                              importance$Feature[which(cv_results$error_rate > median(cv_results$error_rate))])]
-
-# features_to_remove <- caret::findCorrelation(
-#   cor(important_train)
-# )
-# 
-# reduced_important_train <- important_train[, -features_to_remove]
-
-#for the model i will be using features above median of cross validation error rate
-formula_str <- paste("signal ~",paste(colnames(train[,-1]), collapse = " + "))
-model_formula  <- as.formula(formula_str)
-suppressWarnings(
-  model <- glm(formula = model_formula ,
-                          data = train,
-                          family = binomial(link = "logit")))
-
-# save the optimal holding period to the model object
-model$optimal_hold_period <- optimal_signal_params$opt_hold_period
+tab1
 
 ########################### 
 ### Find optimal cutoff ###
