@@ -5,7 +5,7 @@ add_ta <- function(candles_df){
   rownames(con_OHLC_quantmod) <- con_OHLC_quantmod$open_time
   con_OHLC_quantmod$open_time <- NULL
   
-  con_OHLC <- as.xts(con_OHLC_quantmod)
+  con_OHLC <- xts::as.xts(con_OHLC_quantmod)
 
   close_price_quantmod <- quantmod::Cl(con_OHLC)
   close_price <- as.numeric(close_price_quantmod)

@@ -1,10 +1,9 @@
-pacman::p_load(RSQLite, TTR, xts, quantmod, here)
 suppressMessages(
   here::i_am("models/default_create.R")
 )
 
 # Connect to the SQLite database
-conn <- dbConnect(RSQLite::SQLite(), "database.sqlite")
+conn <- DBI::dbConnect(RSQLite::SQLite(), "database.sqlite")
 
 # Load the trained model from the file
 model <- readRDS("models/prediction_model.rds")
@@ -19,9 +18,9 @@ query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
           WHERE symbol = 'BTCUSDT'
           ORDER BY open_time DESC
           LIMIT 50;"
-data <- dbGetQuery(conn, query)
+data <- DBI::dbGetQuery(conn, query)
 # Disconnect from the database
-dbDisconnect(conn)
+DBI::dbDisconnect(conn)
 
 
 rownames(data) <- as.POSIXct(data$open_time)
@@ -46,7 +45,7 @@ tech_ind <- add_ta(candles_df = candles_df)
 
 # Use the model to predict whether to buy or sell
 suppressWarnings(
-  prediction <- predict(model, newdata = last(tech_ind), type = 'response')
+  prediction <- predict(model, newdata = tail(tech_ind, 1), type = 'response')
 )
 
 # Output either 1 (buy) or 0 (do not buy)

@@ -1,25 +1,9 @@
-# library("RSQLite")
-# library("TTR")
-# library("quantmod")
-# library("xgboost")
-# library("ROCR")
-# library("Information")
-# library("PerformanceAnalytics")
-# library("rpart")
-# library("randomForest")
-# library("dplyr")
-# library("magrittr")
-# library("here")
-# library("ggplot2")
-# library("svglite")
-pacman::p_load(RSQLite, TTR, quantmod, xgboost, ROCR, Information, PerformanceAnalytics,
-               rpart, randomForest, dplyr, magrittr, here, ggplot2, svglite)
 suppressMessages(
   here::i_am("models/default_create.R")
 )
 
 # Connect to the SQLite database
-conn <- dbConnect(RSQLite::SQLite(), "database.sqlite")
+conn <- DBI::dbConnect(RSQLite::SQLite(), "database.sqlite")
 
 # Query the klines table and retrieve the historical data
 query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
@@ -29,11 +13,11 @@ query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
                  volume
           FROM klines
           WHERE symbol = 'BTCUSDT'
-          ORDER BY open_time DESC;"
-data <- dbGetQuery(conn, query)
+          ORDER BY open_time DESC LIMIT 1000;"
+data <- DBI::dbGetQuery(conn, query)
 
 # Disconnect from the database
-dbDisconnect(conn)
+DBI::dbDisconnect(conn)
 
 rownames(data) <- as.POSIXct(data$open_time)
 
@@ -89,7 +73,7 @@ train <- signal_with_TA[train_index,]
 #####################################################################
 ####  XGboost model for feature importance and feature selection ####
 #####################################################################
-xgb_train <- xgb.DMatrix(data = as.matrix(train[,-1]), 
+xgb_train <- xgboost::xgb.DMatrix(data = as.matrix(train[,-1]), 
                          label = train$signal) 
 
 # Do we really need xgb test?
@@ -98,7 +82,7 @@ xgb_train <- xgb.DMatrix(data = as.matrix(train[,-1]),
 
 # Set a seed for reproducibility
 set.seed(123)
-cv <- xgb.cv(data = xgb_train, nfold = 5,
+cv <- xgboost::xgb.cv(data = xgb_train, nfold = 5,
              objective = "binary:logistic", 
              nrounds = 100, 
              early_stopping_rounds = 10,
@@ -108,13 +92,13 @@ cv <- xgb.cv(data = xgb_train, nfold = 5,
 nrounds <- which.min(cv$evaluation_log$test_logloss_mean)
 
 # Train XGBoost model with optimal hyperparameters
-bst_select <- xgboost(data = xgb_train, 
+bst_select <- xgboost::xgboost(data = xgb_train, 
                       nrounds = nrounds,
                       max_depth = 3, 
                       eta = 0.1, 
                       objective = "binary:logistic", 
                       verbose = FALSE)
-importance <- xgb.importance(feature_names = colnames(xgb_train), model = bst_select)
+importance <- xgboost::xgb.importance(feature_names = colnames(xgb_train), model = bst_select)
 
 # Find optimal number of model features
 # Define the range of k values to test (all potential features)
@@ -140,8 +124,8 @@ for (i in seq_along(k_values)) {
   # Subset the data to include only the top k features
   subset_data <- train[, top_features, drop = FALSE]
   # Train an XGBoost model using the subset data
-  subset_dtrain <- xgb.DMatrix(as.matrix(subset_data), label = train$signal)
-  cv_error <- xgb.cv(params, subset_dtrain, nfold = 5, nrounds = 10, 
+  subset_dtrain <- xgboost::xgb.DMatrix(as.matrix(subset_data), label = train$signal)
+  cv_error <- xgboost::xgb.cv(params, subset_dtrain, nfold = 5, nrounds = 10, 
                      metrics = "error", verbose = FALSE)
   # Store the cross-validation error rate for this value of k
   cv_results[i, "error_rate"] <- min(cv_error$evaluation_log$test_error_mean)
@@ -196,6 +180,12 @@ if(all(test$signal == 0)){
   model$optimal_cutoff <- optimal_cutoff <- pROC::coords(pred, "best", ret = "threshold", input.sort = FALSE)
 }
 
+# Adding the conservativity factor to probability
+conservative_factor <- 0.05
+
+ model$optimal_cutoff <- model$optimal_cutoff + conservative_factor
+
+
 # Save the trained model to a file-
 saveRDS(model, "models/prediction_model.rds")
 
@@ -213,7 +203,6 @@ plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE){
   
   df <- merge(df, test_predictions, by= "plot_time", all = TRUE)
   
-  print(tail(df))
   ggplot2::ggplot(df, ggplot2::aes(x = plot_time, y = plot_price)) +
     ggplot2::geom_line() +
     ggplot2::geom_point(data = subset(df, plot_signal == 1),
@@ -227,8 +216,8 @@ plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE){
     ggplot2::labs(x = "Time", y = "Price", title = "Price over time with Buy/Sell Signals", subtitle = paste("Holding period:", signals$opt_hold_period)) +
     ggplot2::scale_x_datetime(breaks = scales::date_breaks(paste(nrow(candles_df)/6, "min")), 
                               labels = scales::date_format("%Y-%m-%d %H:%M")) +
-    geom_vline(xintercept = df[max(train_index), 'plot_time'], color = "red") +
-    theme(axis.text.x = element_text(angle = 45, vjust = 0.1))
+    ggplot2::geom_vline(xintercept = df[max(train_index), 'plot_time'], color = "red") +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, vjust = 0.1))
 }
 
 historical_signal_plot <- plot_trading_signal(
