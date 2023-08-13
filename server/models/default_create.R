@@ -13,7 +13,7 @@ query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
                  volume
           FROM klines
           WHERE symbol = 'BTCUSDT'
-          ORDER BY open_time DESC LIMIT 1000;"
+          ORDER BY open_time DESC;"
 data <- DBI::dbGetQuery(conn, query)
 
 # Disconnect from the database

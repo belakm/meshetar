@@ -22,7 +22,6 @@ data <- DBI::dbGetQuery(conn, query)
 # Disconnect from the database
 DBI::dbDisconnect(conn)
 
-
 rownames(data) <- as.POSIXct(data$open_time)
 
 # data$open <- as.numeric(as.character(data$open))
@@ -56,6 +55,7 @@ if (prediction > model$optimal_cutoff) {
 # } else if (prediction < model$optimal_cutoff) {  
 #   output <- -1
 }
+
 cat(output)
 # cat(paste("Optimal hold period:", model$optimal_hold_period, "candles"))
 
