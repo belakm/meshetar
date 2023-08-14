@@ -3,7 +3,7 @@ use crate::routes::{
     plot_chart,
 };
 use crate::store::Store;
-use crate::store_models::{BalanceSheetWithBalances, Interval, Meshetar, Pair, Status};
+use crate::store_models::{BalanceSheetWithBalances, Chart, Interval, Meshetar, Pair, Status};
 use crate::utils::{console_log, get_timestamp, readable_date, to_fiat_format};
 use gloo_timers::future::TimeoutFuture;
 use sycamore::futures::spawn_local_scoped;
@@ -38,11 +38,9 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
         server_state: create_rc_signal(Status::Idle),
         last_kline_time: create_rc_signal(String::from("0")),
         balance_sheet: create_rc_signal(BalanceSheetWithBalances::default()),
+        chart: create_rc_signal(Chart::default()),
     };
     let store = provide_context(cx, store);
-
-    // For handling chart versioning
-    let chart_path = create_signal(cx, String::from(""));
 
     // For handling states
     let is_normally_disabled = create_signal(cx, *store.server_state.get() != Status::Idle);
@@ -76,8 +74,8 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                 }
                 _ => (),
             }
-            match plot_chart().await {
-                Ok(path) => chart_path.set(path),
+            match plot_chart(store.chart.get().page).await {
+                Ok(chart) => store.chart.set(chart),
                 _ => (),
             }
             match fetch_balance_sheet().await {
@@ -157,6 +155,24 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
         spawn_local_scoped(cx, async move {
             match routes::clear_history().await {
                 Ok(meshetar) => sync_store(store, meshetar),
+                _ => (),
+            }
+        });
+    };
+    let chart_pagination_increase = move |_| {
+        store.chart.set(store.chart.get().set_is_loading(true));
+        spawn_local_scoped(cx, async move {
+            match plot_chart(store.chart.get().page + 1).await {
+                Ok(chart) => store.chart.set(chart),
+                _ => (),
+            }
+        });
+    };
+    let chart_pagination_decrease = move |_| {
+        store.chart.set(store.chart.get().set_is_loading(true));
+        spawn_local_scoped(cx, async move {
+            match plot_chart(store.chart.get().page - 1).await {
+                Ok(chart) => store.chart.set(chart),
                 _ => (),
             }
         });
@@ -248,7 +264,19 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                 }
                 Divider{}
                 div(class="chart-container") {
-                    img(src=format!("http://localhost:8000/{}?ver={}", *chart_path.get(), get_timestamp()))
+                    div(class="chart-controls") {
+                        button(class="contrast", aria-loading=store.chart.get().is_loading, on:click=chart_pagination_increase, disabled=store.chart.get().prev_disabled()) {
+                            "◀️ Prev"
+                        }
+                        span {
+                            (store.chart.get().page) " / " (store.chart.get().total_pages)
+                        }
+                        button(class="contrast", aria-loading=store.chart.get().is_loading, on:click=chart_pagination_decrease, disabled=store.chart.get().next_disabled()) {
+                            "▶️ Next"
+                        }
+                    }
+                    img(src=format!("http://localhost:8000/{}?ver={}", store.chart.get().path, get_timestamp()))
+                    img(src=format!("http://localhost:8000/{}?ver={}", store.chart.get().model_path, get_timestamp()))
                 }
             }
         }

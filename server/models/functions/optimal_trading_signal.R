@@ -30,15 +30,28 @@ optimal_trading_signal <- function(binance_kline,
     
     ## Calculate the optimal buying, holding, and selling signals
     # sell when the returns were the highest
-    for (i in (holding_period):(length(returns))) {
-      # sell when return was above fee + min_profit
-      if(returns[i] > (buy_threshold + fee_rate)) {
+    tryCatch({
+      for (i in (holding_period):(length(returns))) {
+        # sell when return was above fee + min_profit
+        if (returns[i] > (buy_threshold + fee_rate)) {
           signals[i] <- -1  
           
           # Add buy signals for every sell - holding_period (if there are no other buy signals)
-          signals[i-holding_period] <- 1
+          signals[i - holding_period] <- 1
+        }
       }
-    }
+    }, error = function(e) {
+      if (grepl("No history fetched in database", conditionMessage(e))) {
+        # Handle the error caused by missing history in the database
+        # You can print an error message, set default values, or perform other actions.
+        print("Error: No history fetched in database")
+        # Additional error handling code can go here
+      } else {
+        # Handle other errors that might occur during the execution of the code
+        stop("An unexpected error occurred: ", conditionMessage(e))
+      }
+    })
+    
 
     # Apply the trading fees to the returns
     actual_returns <- rep(0, length(returns))

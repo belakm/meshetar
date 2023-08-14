@@ -5,7 +5,7 @@ pub fn console_log(str_to_log: &str) {
 }
 
 pub fn get_timestamp() -> i64 {
-    chrono::Utc::now().timestamp()
+    chrono::Utc::now().timestamp_millis()
 }
 
 pub fn readable_date(epoch: &str) -> String {
@@ -36,4 +36,8 @@ pub fn to_fiat_format(value: f64) -> String {
     }
 
     format!("{},{:02}", formatted_integer, fractional)
+}
+
+pub fn default_false() -> bool {
+    false
 }

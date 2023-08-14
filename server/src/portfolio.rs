@@ -66,7 +66,6 @@ pub async fn fetch_balances() -> Result<(), String> {
         }
         Err(e) => log::warn!("Error parsing balances: {:?}", e),
     }
-    log::info!("Inserted new balances.");
     Ok(())
 }
 

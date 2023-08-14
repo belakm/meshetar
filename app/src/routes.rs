@@ -1,10 +1,19 @@
-use crate::store_models::{BalanceSheetWithBalances, Interval, Meshetar, Pair};
+use crate::store_models::{BalanceSheetWithBalances, Chart, Interval, Meshetar, Pair};
 use reqwest::Response;
 
 async fn parse_status(payload: Response) -> Result<Meshetar, String> {
     match payload.text().await {
         Ok(meshetar) => match serde_json::from_str(&meshetar) {
             Ok(meshetar) => Ok(meshetar),
+            Err(e) => Err(String::from(format!("Error parsing response {:?}", e))),
+        },
+        Err(e) => Err(e.to_string()),
+    }
+}
+async fn parse_chart(payload: Response) -> Result<Chart, String> {
+    match payload.text().await {
+        Ok(chart) => match serde_json::from_str(&chart) {
+            Ok(chart) => Ok(chart),
             Err(e) => Err(String::from(format!("Error parsing response {:?}", e))),
         },
         Err(e) => Err(e.to_string()),
@@ -113,13 +122,19 @@ pub async fn run() -> Result<Meshetar, String> {
     }
 }
 
-pub async fn plot_chart() -> Result<String, String> {
-    let resp = reqwest::get("http://localhost:8000/plot_chart").await;
+pub async fn plot_chart(page: i64) -> Result<Chart, String> {
+    let params = [("page", page.to_string())];
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("http://localhost:8000/plot_chart")
+        .form(&params)
+        .send()
+        .await;
+
     match resp {
         Ok(resp) => {
-            let resp = parse_response_string(resp).await?;
-            println!("{}", resp);
-            Ok(resp)
+            let chart = parse_chart(resp).await?;
+            Ok(chart)
         }
         Err(e) => Err(format!("{}", e)),
     }

@@ -1,26 +1,9 @@
-library("quantmod")
-library("xgboost")
-library("ROCR")
-library("Information")
-library("PerformanceAnalytics")
-library("rpart")
-library("randomForest")
-library("dplyr")
-library("magrittr")
-library("here")
-library("ggplot2")
-library("svglite")
-library("neuralnet")
-
-# pacman::p_load(RSQLite, TTR, quantmod, xgboost, ROCR, Information, PerformanceAnalytics,
-#                rpart, randomForest, dplyr, magrittr, here, ggplot2, svglite, neuralnet)
-
 suppressMessages(
   here::i_am("models/default_create.R")
 )
 
 # Connect to the SQLite database
-conn <- dbConnect(RSQLite::SQLite(), "database.sqlite")
+conn <- DBI::dbConnect(RSQLite::SQLite(), "database.sqlite")
 
 # Query the klines table and retrieve the historical data
 query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
@@ -31,19 +14,12 @@ query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
           FROM klines
           WHERE symbol = 'BTCUSDT'
           ORDER BY open_time DESC;"
-data <- dbGetQuery(conn, query)
+data <- DBI::dbGetQuery(conn, query)
 
 # Disconnect from the database
-dbDisconnect(conn)
+DBI::dbDisconnect(conn)
 
 rownames(data) <- as.POSIXct(data$open_time)
-
-# # Calculate the rate of change (ROC) based on the price data
-# data$open <- as.numeric(as.character(data$open))
-# data$high <- as.numeric(as.character(data$high))
-# data$low <- as.numeric(as.character(data$low))
-# data$close <- as.numeric(as.character(data$close))
-# data$volume <- as.numeric(as.character(data$volume))
 
 # Exclude any rows that contain NA, NaN, or Inf values
 candles_df <- data[complete.cases(data), ]
@@ -82,80 +58,85 @@ tech_ind_normal <- as.data.frame(
   apply(tech_ind, 2, scale)
 ) 
 
+signal_str <- ifelse(signal == 1, "buy",
+                     ifelse(signal == 0, "hold",
+                            ifelse(signal == -1, "sell", "unknown")))
+
+class.ind <- function(cl)
+{
+  n <- length(cl)
+  cl <- as.factor(cl)
+  x <- matrix(0, n, length(levels(cl)) )
+  x[(1:n) + n*(unclass(cl)-1)] <- 1
+  dimnames(x) <- list(names(cl), levels(cl))
+  as.data.frame(x)
+}
+
 # create a modelling data frame
-signal_with_TA <- cbind(signal = signal, 
+signal_with_TA <- cbind(class.ind(signal_str), 
                         tech_ind_normal)[-how_many_ommited,]
 
 # create a train set index for model training
 train_index <- 1:round(0.7*(nrow(signal_with_TA)))
 train <- signal_with_TA[train_index,]
 
-x_train <- train[,-which(names(train) == "signal")]
-y_train <- train[,"signal"]
+y_labs <- c("buy", "hold", "sell")
+x_train <- train[, !colnames(train) %in% y_labs]
+y_train <-  train[, colnames(train) %in% y_labs]
 
 
 test <- signal_with_TA[-train_index,]
-x_test <- test[,-which(names(train) == "signal")]
-y_test <- test[,"signal"]
+x_test <- test[, !colnames(test) %in% y_labs]
+y_test <- test[, colnames(test) %in% y_labs]
 
 ##### Neural Net ###################################
-formula_str <- paste("signal ~",paste(colnames(x_train), collapse = " + "))
-library(h2o) # parallel computing
-h2o.init(nthreads = -1)
-train_h2o <- as.h2o(train)
-
-nnet_model <- neuralnet(formula_str,
-                        train_h2o, 
-                        hidden = length(x_train)*2,
-                        err.fct = "sse", #cross-entropy, 
-                        linear.output = TRUE,
-                        lifesign = 'full', # change this to 'none', for no output
-                        rep = 2, #number of repetitions for the neural network’s training
-                        algorithm = "rprop+",
-                        stepmax = 100000) # logit probability
-
-which_rep <- which(nnet_model$result.matrix[1, ]== min(nnet_model$result.matrix[1, ])) 
-output <- compute(nnet_model, 
-                  rep = which_rep, 
-                  x_train)$net.result
-
-
-tab1 <- table(ifelse(output > 0.5, 1, 0), train$signal)
-
-tab1
-
-########################### 
-### Find optimal cutoff ###
-###########################
-
-test <- signal_with_TA[(max(train_index)+1):nrow(signal_with_TA),]
-
-suppressWarnings(
-  predictions <- predict(model, test,
-                         type = 'response')
+formula_str <- paste(
+  paste(colnames(y_train), collapse = " + "), 
+  "~", 
+  paste(colnames(x_train), collapse = " + ")
 )
 
-# If there are no buy signals in the test period
-if(all(test$signal == 0)){
-  # set it to the median  of predicted probability
-  model$optimal_cutoff <- median(predictions)
-} else {
-  # Find optimal cut
+#Mutlithreading:
+suppressWarnings(
   suppressMessages(
-    pred <- pROC::roc(as.numeric(test[,"signal"]), predictions)
+    h2o::h2o.init(nthreads = -1, log_level = 'WARN')
   )
-  model$optimal_cutoff <- optimal_cutoff <- pROC::coords(pred, "best", ret = "threshold", input.sort = FALSE)
-}
+)
+train_h2o <- h2o::as.h2o(train)
+
+# Without multithreading (parallel processing)
+# train_h2o <- train 
+
+nnet_model <- neuralnet::neuralnet(
+  formula_str,
+  train_h2o, 
+  hidden = c(length(x_train), length(x_train)*2), # 2 hidden layers
+  err.fct = "sse", #cross-entropy, 
+  linear.output = FALSE,  # Use softmax activation if FALSE                       
+  lifesign = 'full', # change this to 'none', for no logging
+  rep = 1, #number of repetitions for the neural network’s training
+  algorithm = "rprop+",
+  stepmax = 100000) # Boost this for more complex nnet
+
+source(paste0(here::here(), "/models/functions/predict_nnet.R"))
+
+nnet_output <- predict_nnet(nnet_model, test)
+
+# confusion matrix - for development, beyond some accuracy, do not save the model
+ table(y_test, nnet_output)
 
 # Save the trained model to a file-
-saveRDS(model, "models/prediction_model.rds")
+saveRDS(nnet_model, "models/prediction_model.rds")
 
+
+# if you are predicting test set:
+nnet_output$plot_time <- as.POSIXct(head(candles_df[-train_index, "open_time"], -49))
 
 # Plot the signals the model was trained on:
-plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE){
+plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE, test_predictions = NULL){
   
-  test_predictions <-  data.frame(plot_time = as.POSIXct(names(predictions)),
-                                  test_predictions = ifelse(predictions > model$optimal_cutoff, 1, 0))
+  # test_predictions <-  data.frame(plot_time = as.POSIXct(names(predictions)),
+  #                                 test_predictions = ifelse(predictions > model$optimal_cutoff, 1, 0))
   
   # candle_hour_minute <- format(as.POSIXct(ohlc_data$open_time),"%H:%M")
   df <- data.frame(plot_time = as.POSIXct(ohlc_data$open_time),
@@ -164,7 +145,6 @@ plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE){
   
   df <- merge(df, test_predictions, by= "plot_time", all = TRUE)
   
-  print(tail(df))
   ggplot2::ggplot(df, ggplot2::aes(x = plot_time, y = plot_price)) +
     ggplot2::geom_line() +
     ggplot2::geom_point(data = subset(df, plot_signal == 1),
@@ -172,19 +152,23 @@ plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE){
     ggplot2::geom_point(data = subset(df, plot_signal == -1),
                         ggplot2::aes(x = plot_time, y = plot_price),
                         color = "red", shape = "-", size = 10, stroke = 4) +
-    ggplot2::geom_point(data = subset(df, test_predictions == 1),
+    ggplot2::geom_point(data = subset(df, test_predictions == "buy"),
                         ggplot2::aes(x = plot_time, y = plot_price),
                         color = "blue", shape = "+", size = 4, stroke = 4) +
+    ggplot2::geom_point(data = subset(df, test_predictions == "sell"),
+                        ggplot2::aes(x = plot_time, y = plot_price),
+                        color = "blue", shape = "-", size = 4, stroke = 4) +
     ggplot2::labs(x = "Time", y = "Price", title = "Price over time with Buy/Sell Signals", subtitle = paste("Holding period:", signals$opt_hold_period)) +
     ggplot2::scale_x_datetime(breaks = scales::date_breaks(paste(nrow(candles_df)/6, "min")), 
                               labels = scales::date_format("%Y-%m-%d %H:%M")) +
-    geom_vline(xintercept = df[max(train_index), 'plot_time'], color = "red") +
-    theme(axis.text.x = element_text(angle = 45, vjust = 0.1))
+    ggplot2::geom_vline(xintercept = df[max(train_index), 'plot_time'], color = "red") +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, vjust = 0.1))
 }
 
 historical_signal_plot <- plot_trading_signal(
   ohlc_data = candles_df,
-  signals =  optimal_signal_params)
+  signals =  optimal_signal_params, 
+  test_predictions = nnet_output)
 
 # Save the svg plot to the folder /server
 suppressMessages(

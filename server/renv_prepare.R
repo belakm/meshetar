@@ -10,7 +10,20 @@ install.packages("caret")
 renv::init()
 
 # Install the packages required by your script
-renv::install(c("RSQLite", "TTR", "quantmod", "xgboost", "ROCR", "Information", "PerformanceAnalytics", "rpart", "randomForest", "dplyr", "magrittr", "here"))
+renv::install(c(
+  "RSQLite", 
+  "TTR", 
+  "quantmod", 
+  "xgboost", 
+  "ROCR", 
+  "dplyr", 
+  "magrittr", 
+  "here",
+  "xts",
+  "svglite",
+  "neuralnet",
+  "h2o"
+))
 
 # Save a snapshot of the current environment to renv.lock
 renv::snapshot()

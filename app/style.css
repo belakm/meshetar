@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
 }
       /* Deep-orange Light scheme (Default) */
 /* Can be forced with data-theme="light" */
@@ -117,4 +117,16 @@ header h1 {
 }
 .asset-grid li > small {
   color: var(--secondary)
+}
+.chart-controls {
+  display: flex;
+  justify-content: end;
+  align-items: baseline;
+}
+.chart-controls > span {
+  display: inline-block;
+  padding: 0 1em;
+}
+.chart-controls > button {
+  width: auto;
 }
