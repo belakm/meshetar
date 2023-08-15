@@ -2,7 +2,7 @@ suppressMessages(
   here::i_am("models/default_create.R")
 )
 
-# Connect to the SQLite database
+## Connect to the SQLite database
 conn <- DBI::dbConnect(RSQLite::SQLite(), "database.sqlite")
 
 # Query the klines table and retrieve the historical data
@@ -13,7 +13,7 @@ query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
                  volume
           FROM klines
           WHERE symbol = 'BTCUSDT'
-          ORDER BY open_time DESC;"
+          ORDER BY open_time ASC;"
 data <- DBI::dbGetQuery(conn, query)
 
 # Disconnect from the database
@@ -111,7 +111,7 @@ nnet_model <- neuralnet::neuralnet(
   formula_str,
   train_h2o, 
   hidden = c(length(x_train), length(x_train)*2), # 2 hidden layers
-  err.fct = "sse", #cross-entropy, 
+  err.fct = "sse", #cross-entropy 'ce', 
   linear.output = FALSE,  # Use softmax activation if FALSE                       
   lifesign = 'full', # change this to 'none', for no logging
   rep = 1, #number of repetitions for the neural network’s training
@@ -122,22 +122,21 @@ source(paste0(here::here(), "/models/functions/predict_nnet.R"))
 
 nnet_output <- predict_nnet(nnet_model, test)
 
-# confusion matrix - for development, beyond some accuracy, do not save the model
- table(y_test, nnet_output)
+# for development: confusion matrix - beyond some accuracy, do not save the model
 
 # Save the trained model to a file-
 saveRDS(nnet_model, "models/prediction_model.rds")
 
 
 # if you are predicting test set:
-nnet_output$plot_time <- as.POSIXct(head(candles_df[-train_index, "open_time"], -49))
+nnet_output$plot_time <- as.POSIXct(candles_df[-train_index, "open_time"][-how_many_ommited])
 
 # Plot the signals the model was trained on:
 plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE, test_predictions = NULL){
-  
+  # For logit:
   # test_predictions <-  data.frame(plot_time = as.POSIXct(names(predictions)),
   #                                 test_predictions = ifelse(predictions > model$optimal_cutoff, 1, 0))
-  
+
   # candle_hour_minute <- format(as.POSIXct(ohlc_data$open_time),"%H:%M")
   df <- data.frame(plot_time = as.POSIXct(ohlc_data$open_time),
                    plot_price = ohlc_data$close, 
@@ -152,14 +151,14 @@ plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE, tes
     ggplot2::geom_point(data = subset(df, plot_signal == -1),
                         ggplot2::aes(x = plot_time, y = plot_price),
                         color = "red", shape = "-", size = 10, stroke = 4) +
-    ggplot2::geom_point(data = subset(df, test_predictions == "buy"),
+    ggplot2::geom_point(data = subset(df, prediction == "buy"),
                         ggplot2::aes(x = plot_time, y = plot_price),
-                        color = "blue", shape = "+", size = 4, stroke = 4) +
-    ggplot2::geom_point(data = subset(df, test_predictions == "sell"),
+                        color = "lightgreen", shape = "+", size = 4, stroke = 4) +
+    ggplot2::geom_point(data = subset(df, prediction == "sell"),
                         ggplot2::aes(x = plot_time, y = plot_price),
-                        color = "blue", shape = "-", size = 4, stroke = 4) +
+                        color = "darkblue", shape = "-", size = 4, stroke = 4) +
     ggplot2::labs(x = "Time", y = "Price", title = "Price over time with Buy/Sell Signals", subtitle = paste("Holding period:", signals$opt_hold_period)) +
-    ggplot2::scale_x_datetime(breaks = scales::date_breaks(paste(nrow(candles_df)/6, "min")), 
+    ggplot2::scale_x_datetime(breaks = scales::date_breaks(paste(nrow(candles_df)/6, "min")),
                               labels = scales::date_format("%Y-%m-%d %H:%M")) +
     ggplot2::geom_vline(xintercept = df[max(train_index), 'plot_time'], color = "red") +
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, vjust = 0.1))
