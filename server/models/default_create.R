@@ -97,15 +97,15 @@ formula_str <- paste(
 )
 
 #Mutlithreading:
-suppressWarnings(
-  suppressMessages(
-    h2o::h2o.init(nthreads = -1, log_level = 'WARN')
-  )
-)
-train_h2o <- h2o::as.h2o(train)
+# suppressWarnings(
+#   suppressMessages(
+#     h2o::h2o.init(nthreads = -1, log_level = 'WARN')
+#   )
+# )
+# train_h2o <- h2o::as.h2o(train)
 
 # Without multithreading (parallel processing)
-# train_h2o <- train 
+train_h2o <- train
 
 nnet_model <- neuralnet::neuralnet(
   formula_str,
