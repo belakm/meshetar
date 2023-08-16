@@ -32,12 +32,14 @@ candles_df <- data[complete.cases(data), ]
 source(paste0(here::here(), "/models/functions/optimal_trading_signal.R"))
 source(paste0(here::here(), "/models/functions/add_ta.R"))
 
-half_the_candles <- nrow(candles_df)/2
+half_the_candles <- round(nrow(candles_df)/2)
+quarter_the_candles <- round(half_the_candles/2)
+one_eight_the_candles <- round(quarter_the_candles/2)
 
 # Find the target (optimal signal)
 optimal_signal_params <- optimal_trading_signal(
   candles_df, 
-  max_holding_period = half_the_candles) 
+  max_holding_period = one_eight_the_candles) 
 
 signal <- optimal_signal_params$signals
 
@@ -156,11 +158,12 @@ plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE, tes
                         color = "lightgreen", shape = "+", size = 4, stroke = 4) +
     ggplot2::geom_point(data = subset(df, prediction == "sell"),
                         ggplot2::aes(x = plot_time, y = plot_price),
-                        color = "darkblue", shape = "-", size = 4, stroke = 4) +
+                        color = "orange", shape = "-", size = 4, stroke = 4) +
     ggplot2::labs(x = "Time", y = "Price", title = "Price over time with Buy/Sell Signals", subtitle = paste("Holding period:", signals$opt_hold_period)) +
     ggplot2::scale_x_datetime(breaks = scales::date_breaks(paste(nrow(candles_df)/6, "min")),
                               labels = scales::date_format("%Y-%m-%d %H:%M")) +
     ggplot2::geom_vline(xintercept = df[max(train_index), 'plot_time'], color = "red") +
+    ggplot2::theme_dark() +
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, vjust = 0.1))
 }
 
@@ -172,7 +175,7 @@ historical_signal_plot <- plot_trading_signal(
 # Save the svg plot to the folder /server
 suppressMessages(
   ggplot2::ggsave(
-    filename = "static/historical_trading_signals_model_was_trained.svg", 
+    filename = "static/historical_trading_signals_model.svg", 
     plot = historical_signal_plot, 
     device = "svg")
 )
