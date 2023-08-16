@@ -172,7 +172,7 @@ historical_signal_plot <- plot_trading_signal(
 # Save the svg plot to the folder /server
 suppressMessages(
   ggplot2::ggsave(
-    filename = "historical_trading_signals_model_was_trained", 
+    filename = "static/historical_trading_signals_model_was_trained.svg", 
     plot = historical_signal_plot, 
     device = "svg")
 )
