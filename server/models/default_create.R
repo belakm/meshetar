@@ -39,7 +39,7 @@ one_eight_the_candles <- round(quarter_the_candles/2)
 # Find the target (optimal signal)
 optimal_signal_params <- optimal_trading_signal(
   candles_df, 
-  max_holding_period = one_eight_the_candles) 
+  max_holding_period = quarter_the_candles) 
 
 signal <- optimal_signal_params$signals
 
@@ -112,7 +112,7 @@ train_h2o <- train
 nnet_model <- neuralnet::neuralnet(
   formula_str,
   train_h2o, 
-  hidden = c(length(x_train), length(x_train)*2), # 2 hidden layers
+  hidden = c(length(x_train)*2, length(x_train)), # 2 hidden layers
   err.fct = "sse", #cross-entropy 'ce', 
   linear.output = FALSE,  # Use softmax activation if FALSE                       
   lifesign = 'full', # change this to 'none', for no logging
@@ -143,6 +143,7 @@ plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE, tes
   df <- data.frame(plot_time = as.POSIXct(ohlc_data$open_time),
                    plot_price = ohlc_data$close, 
                    plot_signal = c(0,signals$signals))
+  df$plot_signal[-train_index] <- NA
   
   df <- merge(df, test_predictions, by= "plot_time", all = TRUE)
   
