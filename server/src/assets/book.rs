@@ -1,9 +1,9 @@
 use crate::{
     binance_client::{BINANCE_CLIENT, BINANCE_WSS_BASE_URL},
     database::DB_POOL,
-    formatting::timestamp_to_string,
-    meshetar::Meshetar,
-    prediction_model::{self, TradeSignal},
+    model::prediction_model::{self, TradeSignal},
+    trading::meshetar::Meshetar,
+    utils::formatting::timestamp_to_string,
     TaskControl,
 };
 use binance_spot_connector_rust::{

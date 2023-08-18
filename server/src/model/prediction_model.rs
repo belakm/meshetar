@@ -3,7 +3,7 @@ use std::sync::Arc;
 use strum::{Display, EnumString};
 use tokio::sync::Mutex;
 
-use crate::{rlang_runner, TaskControl};
+use crate::{utils::rlang_runner, TaskControl};
 
 #[derive(Debug, Copy, Clone, Display, EnumString)]
 pub enum TradeSignal {

@@ -1,4 +1,4 @@
-use crate::load_config::{read_config, Config};
+use crate::utils::load_config::{read_config, Config};
 use binance_spot_connector_rust::{http::Credentials, hyper::BinanceHttpClient};
 use hyper::client::HttpConnector;
 use hyper_tls::HttpsConnector;

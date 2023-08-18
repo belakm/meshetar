@@ -1,45 +1,32 @@
 // Main modules
-//
-mod asset_ticker;
-mod backtesting;
-mod binance_client;
-mod book;
-mod database;
-mod formatting;
-mod load_config;
-mod meshetar;
-mod plot;
-mod portfolio;
-mod prediction_model;
-mod rlang_runner;
-mod serde_utils;
+mod assets;
+mod model;
+mod plotting;
+mod trading;
+mod utils;
 
+use assets::{
+    asset_ticker,
+    routes::{clear_history, fetch_history, last_kline_time},
+};
 use env_logger::Builder;
 use log::LevelFilter;
-use meshetar::Interval;
-use meshetar::Meshetar;
-use meshetar::MeshetarStatus;
-use meshetar::Pair;
-use portfolio::BalanceSheetWithBalances;
+use model::routes::create_new_model;
+use plotting::routes::plot_chart;
 use rocket::catch;
 use rocket::fairing::{Fairing, Info, Kind};
-use rocket::form::Form;
 use rocket::fs::FileServer;
 use rocket::fs::Options;
 use rocket::futures::TryFutureExt;
 use rocket::http::Header;
 use rocket::http::Status;
-use rocket::response::status::Accepted;
-use rocket::response::status::Custom;
-use rocket::serde::json::Json;
-use rocket::State;
 use rocket::{Request, Response};
-use serde::Deserialize;
-use serde::Serialize;
-use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio::sync::Mutex;
+use trading::routes::{interval_put, meshetar_status, pair_put, run, stop_all_operations};
+use trading::{meshetar::Meshetar, portfolio, routes::balance_sheet};
+use utils::{binance_client, database};
 
 pub struct CORS;
 
@@ -104,6 +91,7 @@ async fn main() -> Result<(), String> {
     builder.init();
 
     binance_client::initialize().await?;
+
     database::initialize().await?;
     let meshetar = Arc::new(Mutex::new(Meshetar::new()));
     let (sender, receiver) = watch::channel(false);
@@ -156,232 +144,5 @@ async fn main() -> Result<(), String> {
     {
         Ok(_) => Ok(()),
         Err(e) => Err(e),
-    }
-}
-
-#[post("/run")]
-async fn run(
-    meshetar: &State<Arc<Mutex<Meshetar>>>,
-    task_control: &State<Arc<Mutex<TaskControl>>>,
-) -> Accepted<Json<Meshetar>> {
-    // Set state to running
-    let meshetar_clone = Arc::clone(&meshetar.inner());
-    meshetar_clone.lock().await.status = MeshetarStatus::Running;
-    drop(meshetar_clone);
-    // Set task control to running
-    &task_control.lock().await.sender.send(true);
-    let reciever = Arc::clone(&task_control.inner());
-
-    // used as input to function
-    let meshetar_clone2 = Arc::clone(&meshetar.inner());
-    // used for setting the state back to Idle later
-    let meshetar_clone3 = Arc::clone(&meshetar.inner());
-    // used for extracting the early response status
-    let meshetar_clone4 = Arc::clone(&meshetar.inner());
-    // Start running
-    tokio::spawn(async move {
-        match book::run(reciever, meshetar_clone2).await {
-            Ok(_) => log::warn!("Running ended successfully"),
-            Err(e) => log::error!("Running failed with error {}", e),
-        };
-        let mut meshetar_clone = meshetar_clone3.lock().await;
-        meshetar_clone.status = MeshetarStatus::Idle;
-    });
-
-    let summary = meshetar_clone4.lock().await.summerize_json();
-    Accepted(Some(summary))
-}
-
-#[post("/create_new_model")]
-async fn create_new_model(
-    meshetar: &State<Arc<Mutex<Meshetar>>>,
-    task_control: &State<Arc<Mutex<TaskControl>>>,
-) -> Accepted<Json<Meshetar>> {
-    // Set state to running
-    let meshetar_clone = Arc::clone(&meshetar.inner());
-    meshetar_clone.lock().await.status = MeshetarStatus::CreatingNewModel;
-    drop(meshetar_clone);
-    // Set task control to running
-    &task_control.lock().await.sender.send(true);
-    let reciever = Arc::clone(&task_control.inner());
-
-    let meshetar_clone2 = Arc::clone(&meshetar.inner());
-    let meshetar_clone3 = Arc::clone(&meshetar.inner());
-    // Start running
-    tokio::spawn(async move {
-        match prediction_model::create_model(reciever).await {
-            Ok(_) => log::warn!("Created model successfully"),
-            Err(e) => log::error!("Creating model failed with error {}", e),
-        };
-        let mut meshetar_clone = meshetar_clone2.lock().await;
-        meshetar_clone.status = MeshetarStatus::Idle;
-    });
-
-    let summary = meshetar_clone3.lock().await.summerize_json();
-    Accepted(Some(summary))
-}
-
-#[post("/fetch_history")]
-async fn fetch_history(
-    meshetar: &State<Arc<Mutex<Meshetar>>>,
-    task_control: &State<Arc<Mutex<TaskControl>>>,
-) -> Accepted<Json<Meshetar>> {
-    // Change status
-    let meshetar_clone = Arc::clone(&meshetar.inner());
-    meshetar_clone.lock().await.status = MeshetarStatus::FetchingHistory;
-    let meshetar_clone2 = Arc::clone(&meshetar.inner());
-    let meshetar_clone3 = Arc::clone(&meshetar.inner());
-    let meshetar_clone4 = Arc::clone(&meshetar.inner());
-
-    // Set status of task control to "working"
-    &task_control.lock().await.sender.send(true);
-    let reciever = Arc::clone(&task_control.inner());
-
-    tokio::spawn(async move {
-        let fetch_start = (chrono::Utc::now() - chrono::Duration::days(2)).timestamp();
-        match book::fetch_history(reciever, meshetar_clone2, fetch_start).await {
-            Ok(_) => log::info!("History fetching success."),
-            Err(e) => log::info!("History fetching err: {:?}", e),
-        };
-        let mut meshetar_clone = meshetar_clone3.lock().await;
-        meshetar_clone.status = MeshetarStatus::Idle;
-    });
-    let summary = meshetar_clone4.lock().await.summerize_json();
-    Accepted(Some(summary))
-}
-
-#[post("/stop")]
-async fn stop_all_operations(
-    meshetar: &State<Arc<Mutex<Meshetar>>>,
-    task_control: &State<Arc<Mutex<TaskControl>>>,
-) -> Accepted<Json<Meshetar>> {
-    if let Err(e) = task_control.lock().await.sender.send(false) {
-        log::warn!("Failed to stop task. {}", e);
-    }
-    let mut meshetar = meshetar.lock().await;
-    meshetar.status = MeshetarStatus::Stopping;
-    Accepted(Some(meshetar.summerize_json()))
-}
-
-#[post("/clear_history")]
-async fn clear_history(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Json<Meshetar>> {
-    tokio::join!(async {
-        let m = meshetar.lock().await;
-        let pair = m.pair.to_string();
-        let interval = m.interval.to_kline_interval();
-        match book::clear_history(pair, interval).await {
-            Ok(_) => log::info!("History cleaning success."),
-            Err(e) => log::info!("History cleaning err: {:?}", e),
-        };
-    });
-    Accepted(Some(meshetar.lock().await.summerize_json()))
-}
-
-#[get("/balance_sheet")]
-async fn balance_sheet() -> Result<Accepted<Json<BalanceSheetWithBalances>>, Custom<String>> {
-    match portfolio::get_balance_sheet().await {
-        Ok(balance_sheet) => Ok(Accepted(Some(Json(balance_sheet.clone())))),
-        Err(e) => Err(Custom(Status::NotFound, format!("{:?}", e))),
-    }
-}
-
-#[get("/status")]
-async fn meshetar_status(meshetar: &State<Arc<Mutex<Meshetar>>>) -> Accepted<Json<Meshetar>> {
-    let meshetar_clone = Arc::clone(&meshetar.inner());
-    let meshetar = meshetar_clone.lock().await;
-    Accepted(Some(meshetar.summerize_json()))
-}
-
-#[derive(FromForm, Deserialize)]
-struct PlotChartPayload<'r> {
-    page: &'r str,
-}
-#[derive(Serialize)]
-pub struct ChartPlotWithPagination {
-    path: String,
-    model_path: String,
-    page: i64,
-    total_pages: i64,
-}
-#[post("/plot_chart", data = "<data>")]
-async fn plot_chart(
-    meshetar: &State<Arc<Mutex<Meshetar>>>,
-    data: Form<PlotChartPayload<'_>>,
-) -> Result<Json<ChartPlotWithPagination>, ()> {
-    let page = match data.page.parse::<i64>() {
-        Ok(page) => page,
-        Err(_) => 0,
-    };
-    let meshetar = meshetar.lock().await;
-    let pair = meshetar.pair.to_string();
-    let interval = meshetar.interval.to_kline_interval().to_string();
-    drop(meshetar);
-    match plot::generate_plot_data(pair, interval, page).await {
-        Ok(chart_plot_data) => {
-            match plot::plot_chart(chart_plot_data.klines, chart_plot_data.signals).await {
-                Ok(path) => Ok(Json(ChartPlotWithPagination {
-                    path,
-                    model_path: "historical_trading_signals_model.svg".to_string(),
-                    page: chart_plot_data.page,
-                    total_pages: chart_plot_data.total_pages,
-                })),
-                Err(e) => Err(log::warn!("Error plotting chart. {e}")),
-            }
-        }
-        Err(e) => Err(log::warn!("Error plotting chart. {e}")),
-    }
-}
-
-#[get("/last_kline_time")]
-async fn last_kline_time() -> Accepted<String> {
-    match book::latest_kline_date().await {
-        Ok(last_kline_time) => Accepted(Some(last_kline_time.to_string())),
-        Err(_) => Accepted(Some(String::from("0"))),
-    }
-}
-
-#[derive(FromForm, Deserialize)]
-struct IntervalPutPayload<'r> {
-    interval: &'r str,
-}
-#[put("/interval", data = "<data>")]
-async fn interval_put(
-    meshetar: &State<Arc<Mutex<Meshetar>>>,
-    data: Form<IntervalPutPayload<'_>>,
-) -> Result<Accepted<String>, Custom<String>> {
-    let mut meshetar = meshetar.lock().await;
-    if let Ok(value) = Interval::from_str(data.interval) {
-        match meshetar.change_interval(value) {
-            Ok(_) => Ok(Accepted(Some(value.to_string()))),
-            Err(e) => Err(Custom(Status::ServiceUnavailable, e)),
-        }
-    } else {
-        Err(Custom(
-            Status::BadRequest,
-            String::from("Couldnt parse interval."),
-        ))
-    }
-}
-
-#[derive(FromForm, Deserialize)]
-struct PairPutPayload<'r> {
-    pair: &'r str,
-}
-#[put("/pair", data = "<data>")]
-async fn pair_put(
-    meshetar: &State<Arc<Mutex<Meshetar>>>,
-    data: Form<PairPutPayload<'_>>,
-) -> Result<Accepted<String>, Custom<String>> {
-    let mut meshetar = meshetar.lock().await;
-    if let Ok(value) = Pair::from_str(data.pair) {
-        match meshetar.change_pair(value) {
-            Ok(_) => Ok(Accepted(Some(value.to_string()))),
-            Err(e) => Err(Custom(Status::ServiceUnavailable, e)),
-        }
-    } else {
-        Err(Custom(
-            Status::BadRequest,
-            String::from("Couldnt parse pair."),
-        ))
     }
 }

@@ -1,4 +1,4 @@
-use crate::{
+use crate::utils::{
     binance_client::BINANCE_CLIENT,
     database::DB_POOL,
     serde_utils::{f64_default, f64_from_string},

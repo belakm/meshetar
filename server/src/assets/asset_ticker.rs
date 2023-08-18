@@ -1,4 +1,4 @@
-use crate::{
+use crate::utils::{
     binance_client::BINANCE_WSS_BASE_URL, database::DB_POOL, serde_utils::f64_from_string,
 };
 use binance_spot_connector_rust::{
