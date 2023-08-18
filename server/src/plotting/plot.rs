@@ -7,7 +7,7 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::TryFutureExt;
-use plotters::prelude::*;
+use plotters::{prelude::*, style::full_palette::PINK};
 use std::str::FromStr;
 
 static PLOT_PATH: &str = "static/plot.svg";
@@ -60,6 +60,11 @@ pub async fn plot_chart(
         filled: false,
         stroke_width: 1,
     };
+    let last_value = ShapeStyle {
+        color: PINK.mix(0.5f64),
+        filled: true,
+        stroke_width: 1,
+    };
 
     let mut global_min = f32::MAX;
     let mut global_max = f32::MIN;
@@ -69,8 +74,8 @@ pub async fn plot_chart(
         global_max = global_max.max(ohlc.0).max(ohlc.1).max(ohlc.2).max(ohlc.3);
     }
 
-    global_min = global_min;
-    global_max = global_max;
+    global_min = global_min * 0.95;
+    global_max = global_max * 1.05;
 
     let root_area = SVGBackend::new(PLOT_PATH, (1024, 480)).into_drawing_area();
     root_area.fill(&RGBColor(20, 30, 38)).unwrap();
@@ -106,12 +111,14 @@ pub async fn plot_chart(
         .draw()
         .unwrap();
 
+    // Candlesticks
     chart
         .draw_series(data.iter().map(|(x, (o, h, l, c))| {
             CandleStick::new(*x, *o, *h, *l, *c, gain_style, lose_style, 3)
         }))
         .unwrap();
 
+    // Trade signals
     for (x, signal) in signals.iter() {
         let style = match signal {
             TradeSignal::Buy => buy_indicator,
@@ -121,14 +128,27 @@ pub async fn plot_chart(
         chart
             .draw_series(std::iter::once(Circle::new(
                 (*x, global_max),
-                3,
+                4,
                 style.clone(),
             )))
             .unwrap();
     }
 
-    root_area.present().unwrap();
+    // Last price
+    if let Some(last_kline) = data.last() {
+        let (x, (_o, _h, _l, c)) = *last_kline;
+        chart
+            .draw_series(std::iter::once(Rectangle::new(
+                [
+                    (x + Duration::seconds(30), c),
+                    (x + Duration::minutes(10), c + 100f32),
+                ],
+                last_value,
+            )))
+            .unwrap();
+    }
 
+    root_area.present().unwrap();
     Ok(PLOT_PATH_CONSUMER.to_string())
 }
 
@@ -193,8 +213,6 @@ pub async fn generate_plot_data(
         let max_time: i64 = klines.first().map(|i| i.open_time).unwrap_or(0);
         let min_time: i64 = klines.last().map(|i| i.open_time).unwrap_or(0);
 
-        log::warn!("MIN TIME MAX TIME {} {}", min_time, max_time);
-
         signals = sqlx::query_as::<_, SimpleSignal>(
             "SELECT signal, time 
             FROM signals 
@@ -224,7 +242,6 @@ pub async fn generate_plot_data(
     let mut signal_rows: Vec<(DateTime<Utc>, TradeSignal)> = signals
         .into_iter()
         .map(|signal| {
-            log::warn!("SIGNAL {:?}", signal);
             (
                 timestamp_to_dt(signal.time / 1000),
                 TradeSignal::from_str(&signal.signal).unwrap(),

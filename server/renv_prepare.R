@@ -21,7 +21,7 @@ renv::install(c(
   "here",
   "xts",
   "svglite",
-  "neuralnet",
+  "neuralnet"
 ))
 
 # Save a snapshot of the current environment to renv.lock
