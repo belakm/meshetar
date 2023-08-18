@@ -1,15 +1,9 @@
-library("RSQLite")
-library("TTR")
-library("xts")
-library("quantmod")
-library("here")
-# pacman::p_load(RSQLite, TTR, xts, quantmod, here)
 suppressMessages(
   here::i_am("models/default_create.R")
 )
 
 # Connect to the SQLite database
-conn <- dbConnect(RSQLite::SQLite(), "database.sqlite")
+conn <- DBI::dbConnect(RSQLite::SQLite(), "database.sqlite")
 
 # Load the trained model from the file
 model <- readRDS("models/prediction_model.rds")
@@ -24,10 +18,9 @@ query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
           WHERE symbol = 'BTCUSDT'
           ORDER BY open_time DESC
           LIMIT 50;"
-data <- dbGetQuery(conn, query)
+data <- DBI::dbGetQuery(conn, query)
 # Disconnect from the database
-dbDisconnect(conn)
-
+DBI::dbDisconnect(conn)
 
 rownames(data) <- as.POSIXct(data$open_time)
 
@@ -49,19 +42,18 @@ candles_df <- data
 source(paste0(here::here(), "/models/functions/add_ta.R"))
 tech_ind <- add_ta(candles_df = candles_df)
 
+source(paste0(here::here(), "/models/functions/predict_nnet.R"))
+
 # Use the model to predict whether to buy or sell
 suppressWarnings(
-  prediction <- predict(model, newdata = last(tech_ind), type = 'response')
+  prediction <- predict_nnet(nn_model = model, data_to_predict = tail(tech_ind, 1))
 )
+output <- unlist(prediction)
 
 # Output either 1 (buy) or 0 (do not buy)
-
-output <- "hold"
-if (prediction > model$optimal_cutoff) {  
-  output <- "buy" 
-# } else if (prediction < model$optimal_cutoff) {  
-#   output <- -1
-}
+# output <- ifelse(prediction == 1, "buy",
+#                  ifelse(prediction == 0, "hold",
+#                         ifelse(prediction == -1, "sell", "unknown")))
 cat(output)
 # cat(paste("Optimal hold period:", model$optimal_hold_period, "candles"))
 

@@ -11,3 +11,5 @@
 /app/config.toml
 /app/target
 /app/dist
+server/historical_trading_signals_model_was_trained.svg
+server/historical_trading_signals_model_was_trained

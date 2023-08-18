@@ -1,11 +1,13 @@
 add_ta <- function(candles_df){
+  suppressMessages(
   con_OHLC_quantmod <- quantmod::OHLCV(candles_df)
-  
+  )
+
   # Assign open_time to rownames, this is how as.xts input works.s
   rownames(con_OHLC_quantmod) <- con_OHLC_quantmod$open_time
   con_OHLC_quantmod$open_time <- NULL
   
-  con_OHLC <- as.xts(con_OHLC_quantmod)
+  con_OHLC <- xts::as.xts(con_OHLC_quantmod)
 
   close_price_quantmod <- quantmod::Cl(con_OHLC)
   close_price <- as.numeric(close_price_quantmod)
@@ -50,7 +52,7 @@ add_ta <- function(candles_df){
   # print("after  sar")
   # volat <- setNames(TTR::volatility(con_OHLC), "volat")
   # print("after  volat")
-  
+
   #bullish indicator
   # print("sma20 before")
   ma20 <- TTR::SMA(close_price, n = 20)
@@ -59,7 +61,7 @@ add_ta <- function(candles_df){
   # print("sma50 after")
   bullish <- ifelse(ma20 > ma50, 1, 0) # Create a bullish dummy variable based on the moving average crossover
   volume <- con_OHLC$volume
-  
+
   TA <- data.frame(sma,
                    ema,
                    bb_dn,

@@ -1,3 +1,10 @@
+source(
+  paste0(
+    here::here(),
+    "/models/functions/find_local_minima.R"
+  )
+)
+
 optimal_trading_signal <- function(binance_kline, 
                                    buy_threshold = 0.01,
                                    sell_threshold = -0.01,
@@ -19,8 +26,7 @@ optimal_trading_signal <- function(binance_kline,
         if (i <= holding_period) {
           returns[i] <- sum(roc[2:i])
         } else {
-          returns[i] <- sum(roc[(i-holding_period+1):(i
-                                                    )]) 
+          returns[i] <- sum(roc[(i-holding_period+1):(i)]) 
         }
       }
     }
@@ -30,15 +36,28 @@ optimal_trading_signal <- function(binance_kline,
     
     ## Calculate the optimal buying, holding, and selling signals
     # sell when the returns were the highest
-    for (i in (holding_period):(length(returns))) {
-      # sell when return was above fee + min_profit
-      if(returns[i] > (buy_threshold + fee_rate)) {
+    tryCatch({
+      for (i in (holding_period):(length(returns))) {
+        # sell when return was above fee + min_profit
+        if (returns[i] > (buy_threshold + fee_rate)) {
           signals[i] <- -1  
           
           # Add buy signals for every sell - holding_period (if there are no other buy signals)
-          signals[i-holding_period] <- 1
+          signals[i - holding_period] <- 1
+        }
       }
-    }
+    }, error = function(e) {
+      if (grepl("No history fetched in database", conditionMessage(e))) {
+        # Handle the error caused by missing history in the database
+        # You can print an error message, set default values, or perform other actions.
+        print("Error: No history fetched in database")
+        # Additional error handling code can go here
+      } else {
+        # Handle other errors that might occur during the execution of the code
+        stop("An unexpected error occurred: ", conditionMessage(e))
+      }
+    })
+    
 
     # Apply the trading fees to the returns
     actual_returns <- rep(0, length(returns))
@@ -71,7 +90,15 @@ optimal_trading_signal <- function(binance_kline,
   
   # Final output
   optimal_signals_with_optimal_hodl <- create_signals(holding_period = optimal_hodl)
-  
+  optimal_signals_with_optimal_hodl$signals <- ifelse(
+    optimal_signals_with_optimal_hodl$signals == 1, 
+    yes = 0, 
+    no = optimal_signals_with_optimal_hodl$signals
+    )
+  local_minima <- find_local_minima(x = binance_kline$close, 
+                                    threshold = optimal_hodl)
+
+  optimal_signals_with_optimal_hodl$signals[local_minima$minima] <- 1 #which(binance_kline$close %in% 
   # add element of optimal hold to the list
   optimal_signals_with_optimal_hodl$opt_hold_period = optimal_hodl
   

@@ -4,7 +4,7 @@ options(repos = "http://cran.rstudio.com/")
 install.packages("tcltk")
 install.packages("renv")
 install.packages("stringi")
-install.packages("caret")
+install.packages("h2o")
 
 # Initialize the project and create a project-specific library
 renv::init()
@@ -16,15 +16,12 @@ renv::install(c(
   "quantmod", 
   "xgboost", 
   "ROCR", 
-  "Information", 
-  "PerformanceAnalytics", 
-  "rpart", 
-  "randomForest", 
   "dplyr", 
   "magrittr", 
   "here",
   "xts",
-  "svglite"
+  "svglite",
+  "neuralnet",
 ))
 
 # Save a snapshot of the current environment to renv.lock
