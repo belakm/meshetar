@@ -79,6 +79,22 @@ pub async fn setup_tables() -> Result<(), String> {
             signal TEXT NOT NULL,
             PRIMARY KEY (symbol, interval, time)
         );
+        CREATE TABLE IF NOT EXISTS account(
+            maker_commission INTEGER NOT NULL,
+            taker_commission INTEGER NOT NULL,
+            buyer_commission INTEGER NOT NULL,
+            seller_commission INTEGER NOT NULL,
+            can_trade INTEGER NOT NULL,
+            can_withdraw INTEGER NOT NULL,
+            can_deposit INTEGER NOT NULL,
+            brokered INTEGER NOT NULL,
+            require_self_rade_prevention INTEGER NOT NULL,
+            prevent_sor INTEGER NOT NULL,
+            update_time INTEGER NOT NULL,
+            account_type TEXT NOT NULL,
+            uid INTEGER NOT NULL,
+            PRIMARY KEY (uid)
+        );
         CREATE TABLE IF NOT EXISTS asset_ticker (
             symbol TEXT NOT NULL,
             price_change REAL NOT NULL,

@@ -107,7 +107,7 @@ async fn main() -> Result<(), String> {
     // Periodically get account status
     tokio::spawn(async {
         loop {
-            match portfolio::fetch_balances().await {
+            match portfolio::fetch_account_data().await {
                 Err(e) => log::warn!("Error fetching balance: {:?}", e),
                 _ => (),
             }

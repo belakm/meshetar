@@ -9,7 +9,7 @@ use futures::TryFutureExt;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct ApiBalance {
     asset: String,
     #[serde(deserialize_with = "f64_from_string")]
@@ -20,9 +20,34 @@ struct ApiBalance {
     btc_valuation: f64,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct ApiAccount {
+    #[serde(rename = "makerCommission")]
+    maker_commission: i64,
+    #[serde(rename = "takerCommission")]
+    taker_commission: i64,
+    #[serde(rename = "buyerCommission")]
+    buyer_commission: i64,
+    #[serde(rename = "sellerCommission")]
+    seller_commission: i64,
+    #[serde(rename = "canTrade")]
+    can_trade: bool,
+    #[serde(rename = "canWithdraw")]
+    can_withdraw: bool,
+    #[serde(rename = "canDeposit")]
+    can_deposit: bool,
+    brokered: bool,
+    #[serde(rename = "requireSelfTradePrevention")]
+    require_self_rade_prevention: bool,
+    #[serde(rename = "preventSor")]
+    prevent_sor: bool,
+    #[serde(rename = "updateTime")]
+    update_time: i64,
+    #[serde(rename = "accountType")]
+    account_type: String,
     balances: Vec<ApiBalance>,
+    // permissions: Vec<String>,
+    uid: i64,
 }
 
 #[derive(FromRow, Clone, Serialize)]
@@ -50,7 +75,7 @@ pub struct BalanceSheetWithBalances {
     balances: Vec<Balance>,
 }
 
-pub async fn fetch_balances() -> Result<(), String> {
+pub async fn fetch_account_data() -> Result<(), String> {
     let client = BINANCE_CLIENT.get().unwrap();
     let response = client
         .send(trade::account())
@@ -61,11 +86,50 @@ pub async fn fetch_balances() -> Result<(), String> {
         .await?;
 
     match serde_json::from_str::<ApiAccount>(&response) {
-        Ok(balances) => {
-            insert_balances(balances.balances).await?;
+        Ok(account) => {
+            insert_account(&account).await?;
+            insert_balances(account.balances).await?;
         }
         Err(e) => log::warn!("Error parsing balances: {:?}", e),
     }
+    Ok(())
+}
+
+async fn insert_account(account: &ApiAccount) -> Result<(), String> {
+    let connection = DB_POOL.get().unwrap();
+    sqlx::query(
+        "INSERT OR REPLACE INTO account (
+            maker_commission,
+            taker_commission,
+            buyer_commission,
+            seller_commission,
+            can_trade,
+            can_withdraw,
+            can_deposit,
+            brokered,
+            require_self_rade_prevention,
+            prevent_sor,
+            update_time,
+            account_type,
+            uid
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+    )
+    .bind(account.maker_commission)
+    .bind(account.taker_commission)
+    .bind(account.buyer_commission)
+    .bind(account.seller_commission)
+    .bind(account.can_trade)
+    .bind(account.can_withdraw)
+    .bind(account.can_deposit)
+    .bind(account.brokered)
+    .bind(account.require_self_rade_prevention)
+    .bind(account.prevent_sor)
+    .bind(account.update_time)
+    .bind(account.account_type.clone())
+    .bind(account.uid)
+    .execute(connection)
+    .map_err(|e| format!("Error inserting new account data. {:?}", e))
+    .await?;
     Ok(())
 }
 
