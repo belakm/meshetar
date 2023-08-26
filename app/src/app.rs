@@ -4,7 +4,10 @@ use crate::routes::{
 };
 use crate::store::Store;
 use crate::store_models::{BalanceSheetWithBalances, Chart, Interval, Meshetar, Pair, Status};
-use crate::utils::{console_log, get_timestamp, readable_date, to_fiat_format};
+use crate::utils::{
+    console_log, date_string_to_integer, get_default_fetch_date, get_timestamp, readable_date,
+    to_fiat_format,
+};
 use gloo_timers::future::TimeoutFuture;
 use sycamore::futures::spawn_local_scoped;
 use sycamore::prelude::{Html, Keyed, Scope};
@@ -35,6 +38,7 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
         mode: create_rc_signal(String::from("Idle")),
         pair: create_rc_signal(String::from("BTCUSDT")),
         interval: create_rc_signal(String::from("Minutes1")),
+        fetch_history_from: create_rc_signal(get_default_fetch_date()),
         server_state: create_rc_signal(Status::Idle),
         last_kline_time: create_rc_signal(String::from("0")),
         balance_sheet: create_rc_signal(BalanceSheetWithBalances::default()),
@@ -121,7 +125,8 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
     };
     let fetch_history = move |_| {
         spawn_local_scoped(cx, async move {
-            match routes::fetch_history().await {
+            let date = date_string_to_integer(&store.fetch_history_from.get());
+            match routes::fetch_history(date).await {
                 Ok(meshetar) => sync_store(store, meshetar),
                 _ => (),
             }
@@ -244,12 +249,15 @@ pub fn App<G: Html>(cx: Scope) -> View<G> {
                     }
                 }
                 div(class="grid") {
+                    input(type="date", bind:value=store.fetch_history_from) {}
                     button(class="secondary", on:click=fetch_history, disabled=*is_normally_disabled.get()) {
                         "📥 Fetch history"
                     }
                     button(class="secondary", on:click=clear_history, disabled=*is_normally_disabled.get()) {
                         "🧹 Clear history"
                     }
+                }
+                div(class="grid") {
                     button(class="secondary", on:click=create_new_model, disabled=*is_normally_disabled.get()) {
                         "🪩 Create new model"
                     }

@@ -3,14 +3,21 @@ use crate::{
     trading::meshetar::{Meshetar, MeshetarStatus},
     TaskControl,
 };
-use rocket::{response::status::Accepted, serde::json::Json, State};
+use rocket::{form::Form, response::status::Accepted, serde::json::Json, State};
+use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-#[post("/fetch_history")]
+#[derive(FromForm, Deserialize)]
+pub struct FetchHistoryPayload {
+    from: i64,
+}
+
+#[post("/fetch_history", data = "<data>")]
 pub async fn fetch_history(
     meshetar: &State<Arc<Mutex<Meshetar>>>,
     task_control: &State<Arc<Mutex<TaskControl>>>,
+    data: Form<FetchHistoryPayload>,
 ) -> Accepted<Json<Meshetar>> {
     // Change status
     let meshetar_clone = Arc::clone(&meshetar.inner());
@@ -23,9 +30,10 @@ pub async fn fetch_history(
     &task_control.lock().await.sender.send(true);
     let reciever = Arc::clone(&task_control.inner());
 
+    log::warn!("{}", data.from.clone());
+
     tokio::spawn(async move {
-        let fetch_start = (chrono::Utc::now() - chrono::Duration::days(2)).timestamp();
-        match book::fetch_history(reciever, meshetar_clone2, fetch_start).await {
+        match book::fetch_history(reciever, meshetar_clone2, data.from).await {
             Ok(_) => log::info!("History fetching success."),
             Err(e) => log::info!("History fetching err: {:?}", e),
         };

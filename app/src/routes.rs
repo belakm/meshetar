@@ -95,10 +95,12 @@ pub async fn clear_history() -> Result<Meshetar, String> {
     }
 }
 
-pub async fn fetch_history() -> Result<Meshetar, String> {
+pub async fn fetch_history(from: i64) -> Result<Meshetar, String> {
+    let params = [("from", from)];
     let client = reqwest::Client::new();
     let resp = client
         .post("http://localhost:8000/fetch_history")
+        .form(&params)
         .send()
         .await;
     match resp {
