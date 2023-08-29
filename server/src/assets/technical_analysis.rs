@@ -1,8 +1,5 @@
 use serde::Deserialize;
-use yata::{
-    methods::ADI,
-    prelude::{Method, OHLCV},
-};
+use yata::prelude::OHLCV;
 
 use super::book::Kline;
 
@@ -33,17 +30,20 @@ pub struct Indicators {
 }
 
 fn klines_to_tuples(klines: Vec<Kline>) -> Vec<(f64, f64, f64, f64, f64)> {
-    klines
+    /*klines
         .into_iter()
         .map(|kline| (kline.open, kline.high, kline.low, kline.close, kline.volume))
         .collect()
+    */
+    todo!()
 }
 
 pub fn add_ta(klines: Vec<Kline>) -> Result<Indicators, String> {
     let mut indicators: Vec<Indicators> = Vec::new();
     if let Some(last_value) = klines.last() {
-        let last_value = last_value.close;
-        let mut adi = ADI::new(20, last_value);
+        //let last_value = last_value.close;
+        //let mut adi = ADI::new(20, last_value);
+        todo!("TA todo")
     } else {
         Err(String::from("Add_ta missing any value"))
     }
