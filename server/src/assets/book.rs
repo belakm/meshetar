@@ -20,21 +20,21 @@ use tokio::{sync::Mutex, time::sleep};
 
 #[allow(unused)]
 #[derive(Deserialize)]
-struct Kline {
-    symbol: String,
-    open_time: i64,
-    open: String,
-    high: String,
-    low: String,
-    close: String,
-    volume: String,
-    close_time: i64,
-    quote_asset_volume: String,
-    trades: i64,
-    taker_buy_base_asset_volume: String,
-    taker_buy_quote_asset_volume: String,
-    // ignore: String,
-    interval: String,
+pub struct Kline {
+    pub symbol: String,
+    pub open_time: i64,
+    pub open: String,
+    pub high: String,
+    pub low: String,
+    pub close: String,
+    pub volume: String,
+    pub close_time: i64,
+    pub quote_asset_volume: String,
+    pub trades: i64,
+    pub taker_buy_base_asset_volume: String,
+    pub taker_buy_quote_asset_volume: String,
+    // pub ignore: String,
+    pub interval: String,
 }
 
 #[allow(non_snake_case)]
