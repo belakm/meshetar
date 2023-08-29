@@ -57,8 +57,6 @@ if(length(signal) != nrow(tech_ind)){
 how_many_ommited <- 1:sum(!complete.cases(cbind(signal, tech_ind)))
 
 ####  normalization of the tech_ind dataframe  ####
-
-
 # MinMax normalization function
 min_max_normalize <- function(x) {
   if (any(!is.na(x))) {
@@ -132,9 +130,9 @@ if(any(colnames(test) %in% y_labs)){
 keras::k_clear_session()
 keras_nn_model <- keras::keras_model_sequential(input_shape = dim(x_train)[2]) |>
 
-  keras::layer_dense(dim(x_train)[2], activation = FLAGS$activation1) |>
-  keras::layer_dense(dim(x_train)[2]*2, activation = FLAGS$activation2, 
-                     kernel_regularizer = regularizer_l2(l = 0.001)) |>
+  keras::layer_dense(dim(x_train)[2], activation = "relu") |>
+  keras::layer_dense(dim(x_train)[2]*2, activation = "relu", 
+                     kernel_regularizer = keras::regularizer_l2(l = 0.001)) |>
   keras::layer_dense(ncol(y_train), activation = "sigmoid")
 
 summary(keras_nn_model)
@@ -146,8 +144,8 @@ class_weights_named <-  1 - as.numeric(prop.table(table(signal_str)))
 keras_nn_model |> keras::compile(
   loss = 'categorical_crossentropy',
   optimizer = keras::optimizer_rmsprop(learning_rate = 0.01),
-  metrics = c('mse'),
-  loss_weights = class_weights_named  # Specify class weights
+  metrics = c('binary_accuracy'),
+  # loss_weights = class_weights_named  # Specify class weights
 )
 
 # Define early stopping callback
@@ -165,17 +163,28 @@ history <- keras_nn_model |>
   epochs = 30,              # Adjust the number of epochs
   batch_size = 128,          # Adjust the batch size
   validation_split = 0.02,    # Optional: Validation split if you want to monitor validation loss
-  callbacks = list(early_stopping)  # Include the early stopping callback
+  callbacks = list(early_stopping), # Include the early stopping callback
+  class_weights = class_weights_named
 )
 
 keras_nn_model |>
   keras::evaluate(as.matrix(x_test), as.matrix(y_test), batch_size = 32)
 
 predicted_probs <- keras_nn_model |> 
-  predict(as.matrix(x_test)) 
+  predict(as.matrix(x_test))
 
-predicted_classes <- apply(predicted_probs, 1, which.max)
+adjust_conservativeness <- function(predicted_probs, conservative_factor){
+  buy_col <- which(y_labs == "buy")
+  sell_col <- which(y_labs == "sell")
+  
+  predicted_probs[,c(buy_col, sell_col)] <- predicted_probs[,c(buy_col, sell_col)] + conservative_factor
+  predicted_classes <- apply(predicted_probs, 1, which.max)
+  
+  return(predicted_classes)
+}
 
+predicted_classes <- adjust_conservativeness(predicted_probs, 
+                                             conservative_factor = 0.5)
 nnet_output <- data.frame(
   prediction = y_labs[predicted_classes])
 
@@ -276,9 +285,9 @@ plot_trading_signal <- function(ohlc_data, signals, buy = TRUE, sell = TRUE, tes
 }
 
 historical_signal_plot <- plot_trading_signal(
-  ohlc_data = candles_df,
-  signals =  optimal_signal_params, 
-  test_predictions = nnet_output)
+ohlc_data = candles_df,
+signals =  optimal_signal_params, 
+test_predictions = nnet_output)
 
 # Save the svg plot to the folder /server
 suppressMessages(
