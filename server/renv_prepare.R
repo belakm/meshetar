@@ -4,7 +4,16 @@ options(repos = "http://cran.rstudio.com/")
 install.packages("tcltk")
 install.packages("renv")
 install.packages("stringi")
-install.packages("h2o")
+install.packages("keras")
+
+# install_keras function has several arguments as follows:
+
+  # install_keras(method = c("auto", "virtualenv", "conda"),
+  #  conda = "auto", tensorflow = "default",
+  #   extra_packages = c("tensorflow-hub"))
+keras::install_keras()
+
+# if you wish to enjoy your GPU, you are welcomed to change the configuration and specify tensorflow = “gpu”.
 
 # Initialize the project and create a project-specific library
 renv::init()
