@@ -305,7 +305,7 @@ pub async fn fetch_history(
                     break;
                 }
             },
-            _ = sleep(Duration::from_secs(1)) => {
+            _ = sleep(Duration::from_millis(10)) => {
                 log::info!("Loading candles from: {:?}", timestamp_to_string(start_time));
                 let request = market::klines(&symbol, interval)
                     .start_time(start_time as u64)
