@@ -107,11 +107,18 @@ optimal_trading_signal <- function(binance_kline,
   
   # Find the indices of -1 in the time series
   negative_one_indices <- which(optimal_signals_with_optimal_hodl$signals == -1)
+  positive_one_indices <- which(optimal_signals_with_optimal_hodl$signals == 1)
   for(i in negative_one_indices){
     negative_one_indices[i] <- i-1
   }
   
-  # optimal_signals_with_optimal_hodl$signals[negative_one_indices] <- -1
+  for(i in positive_one_indices){
+    positive_one_indices[i] <- i+1
+  }
+  
+  optimal_signals_with_optimal_hodl$signals[negative_one_indices] <- -1
+  optimal_signals_with_optimal_hodl$signals[positive_one_indices] <- 1
+  
   # add element of optimal hold to the list
   optimal_signals_with_optimal_hodl$opt_hold_period = optimal_hodl
   

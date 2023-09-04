@@ -1,7 +1,14 @@
+cat("starting to build the model")
+# Clear workspace
+rm(list = ls())
+
+# cat("after restarting the session")
 suppressMessages(
   here::i_am("models/default_create.R")
 )
 
+source(paste0("models/functions/igc.R"))
+igc()
 ## Connect to the SQLite database
 conn <- DBI::dbConnect(RSQLite::SQLite(), "database.sqlite")
 
@@ -43,11 +50,14 @@ optimal_signal_params <- optimal_trading_signal(
   candles_df, 
   max_holding_period = one_eight_the_candles) 
 
+igc()
+
 signal <- optimal_signal_params$signals
 
 # Assign technical indicators to the candles
 tech_ind <- add_ta(candles_df = candles_df)
 # print("tech_ind_success")
+igc()
 
 if(length(signal) != nrow(tech_ind)){
   signal <- c(0, signal) # add 0 as the first signal.
@@ -57,18 +67,11 @@ if(length(signal) != nrow(tech_ind)){
 how_many_ommited <- 1:sum(!complete.cases(cbind(signal, tech_ind)))
 
 ####  normalization of the tech_ind dataframe  ####
-# MinMax normalization function
-min_max_normalize <- function(x) {
-  if (any(!is.na(x))) {
-    (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
-  } else {
-    x
-  }
-}
 
+# source("models/functions/min_max_normalization.R")
 # Applying MinMax normalization after removing NAs
 tech_ind_normal <- as.data.frame(
-  apply(tech_ind, 2, min_max_normalize)
+  apply(tech_ind, 2, scale)
 )
 
 
@@ -123,16 +126,18 @@ if(any(colnames(test) %in% y_labs)){
   y_test <- data.frame(signal_str  = test[, "signal_str"]) |>
     (\(x) keras::array_reshape(x, dim = dim(x)))()
 }
+igc()
 
 #### KERAS NEURAL NET #####
 
 #clear keras session
 keras::k_clear_session()
 keras_nn_model <- keras::keras_model_sequential(input_shape = dim(x_train)[2]) |>
-
+  keras::layer_dense(dim(x_train)[2]*2, activation = "relu") |>
+  keras::layer_dropout(0.2) |>
+  keras::layer_dense(dim(x_train)[2]*2, activation = "relu") |>
+  keras::layer_dropout(0.2) |>
   keras::layer_dense(dim(x_train)[2], activation = "relu") |>
-  keras::layer_dense(dim(x_train)[2]*2, activation = "relu", 
-                     kernel_regularizer = keras::regularizer_l2(l = 0.001)) |>
   keras::layer_dense(ncol(y_train), activation = "sigmoid")
 
 summary(keras_nn_model)
@@ -143,8 +148,9 @@ class_weights_named <-  1 - as.numeric(prop.table(table(signal_str)))
 # Compile the model
 keras_nn_model |> keras::compile(
   loss = 'categorical_crossentropy',
-  optimizer = keras::optimizer_rmsprop(learning_rate = 0.01),
-  metrics = c('binary_accuracy'),
+  # optimizer = keras::optimizer_rmsprop(learning_rate = 0.01),
+  optimizer = keras::optimizer_adam(1e-2),
+  metrics = c('accuracy'),
   # loss_weights = class_weights_named  # Specify class weights
 )
 
@@ -160,9 +166,9 @@ history <- keras_nn_model |>
   keras::fit(
   x = x_train,
   y = y_train,
-  epochs = 30,              # Adjust the number of epochs
-  batch_size = 128,          # Adjust the batch size
-  validation_split = 0.02,    # Optional: Validation split if you want to monitor validation loss
+  epochs = 100,              # Adjust the number of epochs
+  batch_size = 2048,          # Adjust the batch size
+  # validation_split = 0.2,    # Optional: Validation split if you want to monitor validation loss
   callbacks = list(early_stopping), # Include the early stopping callback
   class_weights = class_weights_named
 )
@@ -184,11 +190,16 @@ adjust_conservativeness <- function(predicted_probs, conservative_factor){
 }
 
 predicted_classes <- adjust_conservativeness(predicted_probs, 
-                                             conservative_factor = 0.5)
+                                             conservative_factor = 0.2)
 nnet_output <- data.frame(
   prediction = y_labs[predicted_classes])
 
 table(nnet_output)
+
+
+# Save the trained model to a file-
+keras::save_model_hdf5(keras_nn_model, "models/prediction_model.h5")
+# saveRDS(keras_nn_model, "models/prediction_model.rds")
 
 ######### Using neuralnet package #########################
 ##### Neural Net ###################################
@@ -236,9 +247,6 @@ table(nnet_output)
 # nnet_output <- predict_nnet(nnet_model, test)
 # 
 # # for development: confusion matrix - beyond some accuracy, do not save the model
-# 
-# # Save the trained model to a file-
-# saveRDS(nnet_model, "models/prediction_model.rds")
 
 
 # if you are predicting test set:
@@ -300,4 +308,6 @@ suppressMessages(
     device = "svg")
 )
 
+
 cat("Model done")
+system(q(save = "no", ))

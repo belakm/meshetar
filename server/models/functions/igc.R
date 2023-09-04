@@ -1,0 +1,5 @@
+igc <- function(){
+  invisible(
+    gc()
+  )
+}
