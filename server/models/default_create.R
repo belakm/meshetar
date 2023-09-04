@@ -138,6 +138,8 @@ keras_nn_model <- keras::keras_model_sequential(input_shape = dim(x_train)[2]) |
   keras::layer_dense(dim(x_train)[2]*2, activation = "relu") |>
   keras::layer_dropout(0.2) |>
   keras::layer_dense(dim(x_train)[2], activation = "relu") |>
+    keras::layer_dense(round(dim(x_train)[2]/2), activation = "relu") |>
+
   keras::layer_dense(ncol(y_train), activation = "sigmoid")
 
 summary(keras_nn_model)
@@ -148,8 +150,7 @@ class_weights_named <-  1 - as.numeric(prop.table(table(signal_str)))
 # Compile the model
 keras_nn_model |> keras::compile(
   loss = 'categorical_crossentropy',
-  # optimizer = keras::optimizer_rmsprop(learning_rate = 0.01),
-  optimizer = keras::optimizer_adam(1e-2),
+  optimizer = keras::optimizer_rmsprop(learning_rate = 0.01),
   metrics = c('accuracy'),
   # loss_weights = class_weights_named  # Specify class weights
 )
@@ -166,9 +167,9 @@ history <- keras_nn_model |>
   keras::fit(
   x = x_train,
   y = y_train,
-  epochs = 100,              # Adjust the number of epochs
-  batch_size = 2048,          # Adjust the batch size
-  # validation_split = 0.2,    # Optional: Validation split if you want to monitor validation loss
+  epochs = 30,              # Adjust the number of epochs
+  batch_size = 32,          # Adjust the batch size
+  validation_split = 0.1,    # Optional: Validation split if you want to monitor validation loss
   callbacks = list(early_stopping), # Include the early stopping callback
   class_weights = class_weights_named
 )
