@@ -72,6 +72,31 @@ pub async fn setup_tables() -> Result<(), String> {
             taker_buy_quote_asset_volume REAL NOT NULL,
             PRIMARY KEY (open_time, symbol, interval)
         );
+        CREATE TABLE IF NOT EXISTS indicators (
+            symbol TEXT NOT NULL,
+            interval TEXT NOT NULL,
+            open_time INTEGER NOT NULL,
+            adi REAL NOT NULL,
+            cci REAL NOT NULL,
+            dema REAL NOT NULL,
+            dma REAL NOT NULL,
+            ema REAL NOT NULL,
+            hma REAL NOT NULL,
+            rma REAL NOT NULL,
+            sma REAL NOT NULL,
+            smm REAL NOT NULL,
+            swma REAL NOT NULL,
+            tema REAL NOT NULL,
+            tma REAL NOT NULL,
+            tr REAL NOT NULL,
+            trima REAL NOT NULL,
+            tsi REAL NOT NULL,
+            vwma REAL NOT NULL,
+            vidya REAL NOT NULL,
+            wma REAL NOT NULL,
+            wsma REAL NOT NULL,
+            PRIMARY KEY (open_time, symbol, interval)
+        );
         CREATE TABLE IF NOT EXISTS signals (
             symbol TEXT NOT NULL,
             interval TEXT NOT NULL,

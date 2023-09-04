@@ -2,7 +2,7 @@ use crate::{
     model::prediction_model::TradeSignal,
     utils::{
         database::DB_POOL,
-        formatting::{dt_to_readable_short, timestamp_to_dt},
+        formatting::{dt_to_readable, timestamp_to_dt},
     },
 };
 use chrono::{DateTime, Duration, Utc};
@@ -79,8 +79,6 @@ pub async fn plot_chart(
 
     let root_area = SVGBackend::new(PLOT_PATH, (1024, 480)).into_drawing_area();
     root_area.fill(&RGBColor(20, 30, 38)).unwrap();
-    let root_area = root_area.margin(10, 10, 10, 10);
-
     let (from_date, to_date) = (
         *&data[0].0 - Duration::minutes(1),
         *&data[*&data.len() - 1].0 + Duration::minutes(1),
@@ -88,7 +86,7 @@ pub async fn plot_chart(
 
     let mut chart = ChartBuilder::on(&root_area)
         .caption("Signals", text_style.clone())
-        .margin(12)
+        .margin(0)
         .x_label_area_size(50)
         .y_label_area_size(120)
         .build_cartesian_2d(from_date..to_date, global_min..global_max)
@@ -104,8 +102,9 @@ pub async fn plot_chart(
         .axis_style(axis_style)
         .x_desc("Time")
         .y_desc("Price")
-        .x_labels(10)
-        .x_label_formatter(&|x| format!("{}", dt_to_readable_short(*x)))
+        .x_labels(9)
+        .x_label_offset(-20)
+        .x_label_formatter(&|x| dt_to_readable(*x))
         .y_labels(10)
         .y_label_formatter(&|y| format!("{:.4}", y))
         .draw()

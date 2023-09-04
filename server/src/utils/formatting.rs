@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local, LocalResult, NaiveDateTime, TimeZone, Utc};
 
-const DATETIME_FORMAT_SHAPE: &str = "%Y-%m-%d %H:%M:%S";
+const DATETIME_FORMAT_SHAPE: &str = "%e. %b %H:%M";
 const DATETIME_FORMAT_SHAPE_SHORT: &str = "%H:%M:%S";
 
 pub fn current_timestamp() -> String {
@@ -22,7 +22,9 @@ pub fn timestamp_to_dt(timestamp: i64) -> DateTime<Utc> {
 }
 
 pub fn dt_to_readable(dt: DateTime<Utc>) -> String {
-    dt.format(&DATETIME_FORMAT_SHAPE).to_string()
+    dt.with_timezone(&Local)
+        .format(&DATETIME_FORMAT_SHAPE)
+        .to_string()
 }
 
 pub fn dt_to_readable_short(dt: DateTime<Utc>) -> String {

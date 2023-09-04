@@ -20,21 +20,21 @@ use tokio::{sync::Mutex, time::sleep};
 
 #[allow(unused)]
 #[derive(Deserialize)]
-struct Kline {
-    symbol: String,
-    open_time: i64,
-    open: String,
-    high: String,
-    low: String,
-    close: String,
-    volume: String,
-    close_time: i64,
-    quote_asset_volume: String,
-    trades: i64,
-    taker_buy_base_asset_volume: String,
-    taker_buy_quote_asset_volume: String,
-    // ignore: String,
-    interval: String,
+pub struct Kline {
+    pub symbol: String,
+    pub open_time: i64,
+    pub open: String,
+    pub high: String,
+    pub low: String,
+    pub close: String,
+    pub volume: String,
+    pub close_time: i64,
+    pub quote_asset_volume: String,
+    pub trades: i64,
+    pub taker_buy_base_asset_volume: String,
+    pub taker_buy_quote_asset_volume: String,
+    // pub ignore: String,
+    pub interval: String,
 }
 
 #[allow(non_snake_case)]
@@ -305,7 +305,7 @@ pub async fn fetch_history(
                     break;
                 }
             },
-            _ = sleep(Duration::from_secs(1)) => {
+            _ = sleep(Duration::from_millis(10)) => {
                 log::info!("Loading candles from: {:?}", timestamp_to_string(start_time));
                 let request = market::klines(&symbol, interval)
                     .start_time(start_time as u64)
