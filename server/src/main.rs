@@ -1,7 +1,10 @@
 // Main modules
 mod assets;
+mod database;
+mod events;
 mod model;
 mod plotting;
+mod portfolio;
 mod trading;
 mod utils;
 
@@ -10,6 +13,7 @@ use assets::{
     routes::{clear_history, fetch_history, last_kline_time},
 };
 use env_logger::Builder;
+use events::{Command, EventTx};
 use log::LevelFilter;
 use model::routes::create_new_model;
 use plotting::routes::plot_chart;
@@ -22,11 +26,11 @@ use rocket::http::Header;
 use rocket::http::Status;
 use rocket::{Request, Response};
 use std::sync::Arc;
-use tokio::sync::watch;
 use tokio::sync::Mutex;
+use tokio::sync::{mpsc, watch};
 use trading::routes::{interval_put, meshetar_status, pair_put, run, stop_all_operations};
-use trading::{meshetar::Meshetar, portfolio, routes::balance_sheet};
-use utils::{binance_client, database};
+use trading::{meshetar::Meshetar, routes::balance_sheet};
+use utils::binance_client;
 
 pub struct CORS;
 
@@ -89,6 +93,12 @@ async fn main() -> Result<(), String> {
     builder.filter(None, LevelFilter::Info); // a default for other libs
     builder.filter(Some("sqlx"), LevelFilter::Warn);
     builder.init();
+
+    let (_command_tx, command_rx) = mpsc::channel::<Command>(20);
+    let (event_tx, event_rx) = mpsc::unbounded_channel();
+    let event_tx = EventTx::new(event_tx);
+
+    let portfolio = Arc::new(Mutex::new(Portfolio::builder()));
 
     binance_client::initialize().await?;
 

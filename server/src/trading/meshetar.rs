@@ -11,7 +11,7 @@ pub enum MeshetarStatus {
     Running,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Display, EnumString)]
+#[derive(Copy, Clone, Debug, Serialize, Display, EnumString, PartialEq)]
 pub enum Pair {
     BTCUSDT,
     ETHBTC,
