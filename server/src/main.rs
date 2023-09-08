@@ -17,6 +17,7 @@ use events::{Command, EventTx};
 use log::LevelFilter;
 use model::routes::create_new_model;
 use plotting::routes::plot_chart;
+use portfolio::Portfolio;
 use rocket::catch;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::fs::FileServer;
@@ -98,7 +99,12 @@ async fn main() -> Result<(), String> {
     let (event_tx, event_rx) = mpsc::unbounded_channel();
     let event_tx = EventTx::new(event_tx);
 
-    let portfolio = Arc::new(Mutex::new(Portfolio::builder()));
+    let portfolio: Arc<Mutex<Portfolio>> = Arc::new(Mutex::new(
+        Portfolio::builder()
+            .database(database::Database {})
+            .build()
+            .map_err(|e| e.to_string())?,
+    ));
 
     binance_client::initialize().await?;
 

@@ -1,23 +1,41 @@
+use crate::database::Database;
+
+use self::error::PortfolioError;
+
 pub mod account;
 pub mod balance;
+pub mod error;
 
-use crate::database::error::DatabaseError;
-
-use self::{account::Account, balance::Balance};
-
-pub struct Portfolio<Database>
-where
-    Database: BalanceHandler + AccountHandler,
-{
+pub struct Portfolio {
     database: Database,
 }
 
-pub trait BalanceHandler {
-    fn set_balance(&mut self, balance: Balance) -> Result<(), DatabaseError>;
-    fn get_balance(&mut self) -> Result<Balance, DatabaseError>;
+impl Portfolio {
+    pub fn builder() -> PortfolioBuilder {
+        PortfolioBuilder::new()
+    }
 }
 
-pub trait AccountHandler {
-    fn set_account(&mut self, account: Account) -> Result<(), DatabaseError>;
-    fn get_account(&mut self) -> Result<Account, DatabaseError>;
+pub struct PortfolioBuilder {
+    database: Option<Database>,
+}
+
+impl PortfolioBuilder {
+    pub fn new() -> Self {
+        PortfolioBuilder { database: None }
+    }
+    pub fn database(self, database: Database) -> Self {
+        Self {
+            database: Some(database),
+            ..self
+        }
+    }
+    pub fn build(self) -> Result<Portfolio, PortfolioError> {
+        let mut portfolio = Portfolio {
+            database: self
+                .database
+                .ok_or(PortfolioError::BuilderIncomplete("database"))?,
+        };
+        Ok(portfolio)
+    }
 }

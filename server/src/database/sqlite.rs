@@ -2,9 +2,11 @@ use sqlx::{Pool, Sqlite, SqlitePool};
 use std::{fs::File, path::Path};
 use tokio::sync::OnceCell;
 
+use super::error::DatabaseError;
+
 pub static DB_POOL: OnceCell<Pool<Sqlite>> = OnceCell::const_new();
 
-pub async fn initialize() -> Result<(), String> {
+pub async fn initialize() -> Result<(), DatabaseError> {
     println!("Initializing database.");
     match set_connection().await {
         Ok(_) => {
@@ -15,40 +17,35 @@ pub async fn initialize() -> Result<(), String> {
     }
 }
 
-pub async fn set_connection() -> Result<(), String> {
+pub async fn set_connection() -> Result<(), DatabaseError> {
     // Creates the database file if it doesnt exist
     let database_path = "database.sqlite";
     if Path::new(database_path).exists() == false {
-        File::create(database_path).map_err(|e| String::from(e.to_string()))?;
+        File::create(database_path).map_err(|_| DatabaseError::Initialization)?;
     }
     // Creates a new pool
-    let pool = SqlitePool::connect("database.sqlite").await;
-    match pool {
-        Ok(pool) => {
-            let set_pool_op = DB_POOL.set(pool);
-            match set_pool_op {
-                Ok(_) => Ok(()),
-                Err(e) => Err(e.to_string()),
-            }
-        }
-        Err(e) => Err(e.to_string()),
-    }
+    let pool = SqlitePool::connect("database.sqlite")
+        .await
+        .map_err(|_| DatabaseError::Initialization)?;
+    DB_POOL
+        .set(pool)
+        .map_err(|_| DatabaseError::Initialization)?;
+    Ok(())
 }
 
-pub async fn setup_tables() -> Result<(), String> {
+pub async fn setup_tables() -> Result<(), DatabaseError> {
     let connection = DB_POOL.get();
-    match connection {
-        Some(connection) => {
-            let init_statement = sqlx::query(
-                "BEGIN;
+    if let Some(connection) = connection {
+        sqlx::query(
+            "BEGIN;
         CREATE TABLE IF NOT EXISTS balances (
-            id INTEGER PRIMARY KEY,
             asset TEXT NOT NULL,
             free REAL NOT NULL,
             locked REAL NOT NULL,
             balance_sheet_id INTEGER,
             btc_valuation REAL NOT NULL,
             FOREIGN KEY (balance_sheet_id) REFERENCES balance_sheets (id)
+            PRIMARY KEY (balance_sheet_id, asset)
         );
         CREATE TABLE IF NOT EXISTS balance_sheets (
             id INTEGER PRIMARY KEY,
@@ -141,15 +138,10 @@ pub async fn setup_tables() -> Result<(), String> {
             PRIMARY KEY (symbol)
         );
         COMMIT;",
-            )
-            .execute(connection)
-            .await;
-
-            match init_statement {
-                Ok(_) => Ok(()),
-                Err(e) => Err(e.to_string()),
-            }
-        }
-        None => Err(String::from("DB pool not ready for operation.")),
+        )
+        .execute(connection)
+        .await
+        .map_err(|_| DatabaseError::Initialization)?;
     }
+    Ok(())
 }

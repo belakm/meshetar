@@ -4,20 +4,27 @@ use sqlx::FromRow;
 
 #[derive(FromRow, Clone, Serialize)]
 pub struct BalanceAsset {
-    id: i64,
-    asset: String,
-    free: f64,
-    locked: f64,
-    balance_sheet_id: i64,
+    pub id: i64,
+    pub asset: String,
+    pub free: f64,
+    pub locked: f64,
+    pub balance_sheet_id: i64,
     #[serde(default = "f64_default")]
-    btc_valuation: f64,
+    pub btc_valuation: f64,
 }
 
 #[derive(Serialize, Clone)]
 pub struct Balance {
-    id: i64,
-    timestamp: NaiveDateTime,
-    btc_valuation: f64,
-    busd_valuation: f64,
-    balances: Vec<BalanceAsset>,
+    pub timestamp: NaiveDateTime,
+    pub btc_valuation: f64,
+    pub busd_valuation: f64,
+    pub balances: Vec<BalanceAsset>,
+}
+
+#[derive(FromRow, Clone, Serialize)]
+pub struct BalanceSheet {
+    pub id: i64,
+    pub timestamp: NaiveDateTime,
+    pub btc_valuation: f64,
+    pub busd_valuation: f64,
 }

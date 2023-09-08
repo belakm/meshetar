@@ -1,6 +1,5 @@
 use crate::utils::{
     binance_client::BINANCE_CLIENT,
-    database::DB_POOL,
     serde_utils::{f64_default, f64_from_string},
 };
 use binance_spot_connector_rust::trade;
