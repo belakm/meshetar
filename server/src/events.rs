@@ -4,16 +4,6 @@ use tracing::warn;
 
 use crate::trading::meshetar::Pair;
 
-#[derive(PartialEq, Debug)]
-pub enum Command {
-    Run(Pair),
-    CreateModel(Pair),
-    Backtest(Pair),
-    Terminate(Pair),
-    TerminateAll,
-    Plot(Pair),
-}
-
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Event {
     Asset(Asset),

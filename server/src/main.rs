@@ -1,5 +1,5 @@
-// Main modules
 mod assets;
+mod core;
 mod database;
 mod events;
 mod model;
@@ -8,33 +8,46 @@ mod portfolio;
 mod trading;
 mod utils;
 
-use assets::{
-    asset_ticker,
-    routes::{clear_history, fetch_history, last_kline_time},
-};
-use database::Database;
+use assets::routes::{clear_history, fetch_history, last_kline_time};
+use core::core::{Command, Core};
+use database::{error::DatabaseError, Database};
 use env_logger::Builder;
-use events::{Command, EventTx};
+use events::EventTx;
 use log::LevelFilter;
 use model::routes::create_new_model;
 use plotting::routes::plot_chart;
-use portfolio::Portfolio;
-use rocket::catch;
-use rocket::fairing::{Fairing, Info, Kind};
-use rocket::fs::FileServer;
-use rocket::fs::Options;
-use rocket::futures::TryFutureExt;
-use rocket::http::Header;
-use rocket::http::Status;
-use rocket::{Request, Response};
+use portfolio::{error::PortfolioError, Portfolio};
+use rocket::{
+    catch,
+    fairing::{Fairing, Info, Kind},
+    fs::FileServer,
+    fs::Options,
+    futures::TryFutureExt,
+    http::Header,
+    http::Status,
+    Error as RocketError, Request, Response,
+};
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::Mutex;
 use tokio::sync::{mpsc, watch};
+use trading::routes::balance_sheet;
 use trading::routes::{interval_put, meshetar_status, pair_put, run, stop_all_operations};
-use trading::{meshetar::Meshetar, routes::balance_sheet};
-use utils::binance_client;
+use utils::binance_client::{self, BinanceClient, BinanceClientError};
 
 pub struct CORS;
+
+#[derive(Error, Debug)]
+enum MainError {
+    #[error("Portfolio error: {0}")]
+    Portfolio(#[from] PortfolioError),
+    #[error("Database error: {0}")]
+    Database(#[from] DatabaseError),
+    #[error("Binance client error: {0}")]
+    BinanceClient(#[from] BinanceClientError),
+    #[error("Rocket server error: {0}")]
+    Rocket(#[from] RocketError),
+}
 
 #[rocket::async_trait]
 impl Fairing for CORS {
@@ -89,7 +102,7 @@ pub struct TaskControl {
 }
 
 #[rocket::main]
-async fn main() -> Result<(), String> {
+async fn main() -> Result<(), MainError> {
     // Sets logging for sqlx to warn and above, info logs are too verbose
     let mut builder = Builder::new();
     builder.filter(None, LevelFilter::Info); // a default for other libs
@@ -102,39 +115,23 @@ async fn main() -> Result<(), String> {
 
     let portfolio: Arc<Mutex<Portfolio>> = Arc::new(Mutex::new(
         Portfolio::builder()
-            .database(Database::new().await?)
+            .database(Database::new().map_err(MainError::from).await?)
             .build()
-            .map_err(|e| e.to_string())?,
+            .map_err(MainError::from)?,
     ));
 
-    binance_client::initialize().await?;
+    let core = Arc::new(Mutex::new(
+        Core::builder()
+            .database(Database::new().await?)
+            .binance_client(BinanceClient::new().map_err(MainError::from).await?)
+            .portfolio(portfolio)
+            .command_rx(command_rx)
+            .build(),
+    ));
 
-    let meshetar = Arc::new(Mutex::new(Meshetar::new()));
-    let (sender, receiver) = watch::channel(false);
-    let task_control = Arc::new(Mutex::new(TaskControl { sender, receiver }));
-
-    // Hook to assets ticker
-    tokio::spawn(async {
-        match asset_ticker::subscribe().await {
-            _ => log::warn!("Price fetching ended."),
-        }
-    });
-
-    // Periodically get account status
-    tokio::spawn(async {
-        loop {
-            match portfolio::fetch_account_data().await {
-                Err(e) => log::warn!("Error fetching balance: {:?}", e),
-                _ => (),
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5000));
-        }
-    });
-
-    match rocket::build()
+    let ignition = rocket::build()
         .attach(CORS)
-        .manage(meshetar)
-        .manage(task_control)
+        .manage(core)
         .mount(
             "/",
             routes![
@@ -155,10 +152,8 @@ async fn main() -> Result<(), String> {
         .mount("/", FileServer::new("static", Options::None).rank(1))
         .register("/", catchers![internal_error, not_found, default])
         .launch()
-        .map_err(|e| e.to_string())
-        .await
-    {
-        Ok(_) => Ok(()),
-        Err(e) => Err(e),
-    }
+        .map_err(MainError::from)
+        .await?;
+
+    Ok(())
 }
