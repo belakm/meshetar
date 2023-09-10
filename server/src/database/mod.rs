@@ -3,7 +3,7 @@ pub mod sqlite;
 
 use crate::portfolio::{
     account::Account,
-    balance::{Balance, BalanceSheet},
+    balance::{Balance, BalanceAsset, BalanceSheet},
 };
 use chrono::{DateTime, Utc};
 
@@ -12,6 +12,11 @@ use self::{error::DatabaseError, sqlite::DB_POOL};
 pub struct Database {}
 
 impl Database {
+    pub async fn new() -> Result<Database, DatabaseError> {
+        sqlite::initialize().await?;
+        Ok(Database {})
+    }
+
     pub async fn set_balance(&mut self, balance: Balance) -> Result<(), DatabaseError> {
         let connection = DB_POOL.get().unwrap();
         let mut tx = connection.begin().await?;
@@ -81,7 +86,23 @@ impl Database {
         .await
         .map_err(|_| DatabaseError::ReadError)?;
 
-        Ok()
+        let query = &format!(
+            "SELECT * 
+            FROM balances
+            WHERE balance_sheet_id = {:?}",
+            &balance_sheet.id
+        );
+        let balances: Vec<BalanceAsset> = sqlx::query_as(query)
+            .fetch_all(connection)
+            .await
+            .map_err(|_| DatabaseError::ReadError)?;
+
+        Ok(Balance {
+            timestamp: balance_sheet.timestamp,
+            btc_valuation: balance_sheet.btc_valuation,
+            busd_valuation: balance_sheet.busd_valuation,
+            balances,
+        })
     }
 
     pub async fn set_account(&mut self, account: Account) -> Result<(), DatabaseError> {

@@ -12,6 +12,7 @@ use assets::{
     asset_ticker,
     routes::{clear_history, fetch_history, last_kline_time},
 };
+use database::Database;
 use env_logger::Builder;
 use events::{Command, EventTx};
 use log::LevelFilter;
@@ -101,14 +102,13 @@ async fn main() -> Result<(), String> {
 
     let portfolio: Arc<Mutex<Portfolio>> = Arc::new(Mutex::new(
         Portfolio::builder()
-            .database(database::Database {})
+            .database(Database::new().await?)
             .build()
             .map_err(|e| e.to_string())?,
     ));
 
     binance_client::initialize().await?;
 
-    database::initialize().await?;
     let meshetar = Arc::new(Mutex::new(Meshetar::new()));
     let (sender, receiver) = watch::channel(false);
     let task_control = Arc::new(Mutex::new(TaskControl { sender, receiver }));
