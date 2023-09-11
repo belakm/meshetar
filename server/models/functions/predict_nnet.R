@@ -12,9 +12,9 @@
 predict_nnet <- function(nn_model, data_to_predict){ 
   
   #select repetition of neural network with minimal error 
-  which_rep <- which(
-    nn_model$result.matrix[1, ]== min(nn_model$result.matrix[1, ])) 
-  
+  # which_rep <- which(
+  #   nn_model$result.matrix[1, ]== min(nn_model$result.matrix[1, ])) 
+
   # Compute output of the neural net
   prediction <- data.frame(
     stats::predict(
