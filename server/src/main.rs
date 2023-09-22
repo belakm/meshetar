@@ -8,14 +8,14 @@ mod portfolio;
 mod trading;
 mod utils;
 
-use assets::routes::{clear_history, fetch_history, last_kline_time};
-use core::core::{Command, Core};
+use core::{Command, Core};
 use database::{error::DatabaseError, Database};
 use env_logger::Builder;
 use events::EventTx;
 use log::LevelFilter;
 use model::routes::create_new_model;
 use plotting::routes::plot_chart;
+use portfolio::routes::balance_sheet;
 use portfolio::{error::PortfolioError, Portfolio};
 use rocket::{
     catch,
@@ -31,8 +31,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::Mutex;
 use tokio::sync::{mpsc, watch};
-use trading::routes::balance_sheet;
-use trading::routes::{interval_put, meshetar_status, pair_put, run, stop_all_operations};
 use utils::binance_client::{self, BinanceClient, BinanceClientError};
 
 pub struct CORS;
@@ -135,18 +133,18 @@ async fn main() -> Result<(), MainError> {
         .mount(
             "/",
             routes![
-                all_options,
-                meshetar_status,
+                all_options, // needed for Rocket to serve to browsers
+                create_new_model,
+                balance_sheet,
+                plot_chart,
+                /*meshetar_status,
+                interval_put,
                 stop_all_operations,
                 fetch_history,
                 clear_history,
-                interval_put,
-                pair_put,
                 last_kline_time,
                 run,
-                create_new_model,
-                plot_chart,
-                balance_sheet
+                plot_chart,*/
             ],
         )
         .mount("/", FileServer::new("static", Options::None).rank(1))

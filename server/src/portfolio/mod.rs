@@ -5,6 +5,7 @@ use self::error::PortfolioError;
 pub mod account;
 pub mod balance;
 pub mod error;
+pub mod routes;
 
 pub struct Portfolio {
     database: Database,

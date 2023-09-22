@@ -17,7 +17,7 @@ binance_spot_connector_rust = { version = "1", features = [
 ], path = "../../binance-spot-connector-rust" }
 hyper-tls = "0.5.0"
 hyper = "0.14"
-toml = "0.7"
+toml = "0.8"
 tokio = { version = "1", features = ["full"] }
 chrono = { version = "0.4", features = ["serde"] }
 lazy_static = "1.4.0"
@@ -35,3 +35,4 @@ yata = "0.6"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 thiserror = "1.0.48"
+uuid = { version = "1.4", features = ["v4"] }
