@@ -1,14 +1,16 @@
-cat("starting to build the model")
+print("starting to build the model")
 # Clear workspace
-rm(list = ls())
 
 # cat("after restarting the session")
 suppressMessages(
   here::i_am("models/default_create.R")
 )
 
-source(paste0("models/functions/igc.R"))
+source("models/functions/igc.R")
 igc()
+
+print("1")
+
 ## Connect to the SQLite database
 conn <- DBI::dbConnect(RSQLite::SQLite(), "database.sqlite")
 
@@ -44,7 +46,7 @@ source(paste0(here::here(), "/models/functions/add_ta.R"))
 half_the_candles <- round(nrow(candles_df)/2)
 quarter_the_candles <- round(half_the_candles/2)
 one_eight_the_candles <- round(quarter_the_candles/2)
-
+cat("before optimal signal params")
 # Find the target (optimal signal)
 optimal_signal_params <- optimal_trading_signal(
   candles_df, 
@@ -171,7 +173,7 @@ history <- keras_nn_model |>
   batch_size = 32,          # Adjust the batch size
   validation_split = 0.1,    # Optional: Validation split if you want to monitor validation loss
   callbacks = list(early_stopping), # Include the early stopping callback
-  class_weights = class_weights_named
+  # class_weights = class_weights_named
 )
 
 keras_nn_model |>
@@ -197,58 +199,20 @@ nnet_output <- data.frame(
 
 table(nnet_output)
 
+n_matched_sell = sum(y_test[, 3] & nnet_output$prediction == "sell")
+n_missed_sell = sum(y_test[,3] & !nnet_output$prediction == "sell")
+n_matched_buy = sum(y_test[,1] & nnet_output$prediction == "buy")
+n_missed_buy = sum(y_test[,1] & !nnet_output$prediction == "buy")
 
+print(data.frame(
+  n_matched_sell, 
+  n_missed_sell, 
+  n_matched_buy ,
+  n_missed_buy )
+)
 # Save the trained model to a file-
-keras::save_model_hdf5(keras_nn_model, "models/prediction_model.h5")
-# saveRDS(keras_nn_model, "models/prediction_model.rds")
-
-######### Using neuralnet package #########################
-##### Neural Net ###################################
-# formula_str <- paste(
-#   paste(names(y_train), collapse = " + "), 
-#   "~", 
-#   paste(colnames(x_train), collapse = " + ")
-# )
-
-#Mutlithreading:
-# suppressWarnings(
-#   suppressMessages(
-#     h2o::h2o.init(nthreads = -1, log_level = 'WARN')
-#   )
-# )
-# train_h2o <- h2o::as.h2o(train)
-
-# Without multithreading (parallel processing)
-# train_h2o <- train
-# 
-# class_weights <- ifelse(
-#   y_train$signal_str %in% c("buy"), 1, 2)
-
-# # Define custom loss function
-# custom_loss <- function(y_true, y_pred) {
-#   weights <- class_weights[y_true]  # Get class weights for the true labels
-#     weighted_losses <-  -weights * log(y_pred)  # Weighted cross-entropy loss
-#   sum(weighted_losses)
-# }
-# 
-# nnet_model <- neuralnet::neuralnet(
-#   formula_str,
-#   train_h2o, 
-#   hidden = c(length(x_train)*2, length(x_train)), # 2 hidden layers
-#   err.fct = "ce", 
-#   linear.output = FALSE,  # Use softmax activation if FALSE 
-#   learningrate = 0.01,
-#   lifesign = 'full', # change this to 'none', for no logging
-#   rep = 1, #number of repetitions for the neural network’s training
-#   algorithm = "rprop+",
-#   stepmax = 100000) # Boost this for more complex nnet
-# 
-# source(paste0(here::here(), "/models/functions/predict_nnet.R"))
-# 
-# nnet_output <- predict_nnet(nnet_model, test)
-# 
-# # for development: confusion matrix - beyond some accuracy, do not save the model
-
+keras::save_model_hdf5(keras_nn_model, "models/prediction_model.keras")
+saveRDS(history, "models/prediction_model.rds")
 
 # if you are predicting test set:
 nnet_output$plot_time <- as.POSIXct(candles_df[-train_index, "open_time"][-how_many_ommited])
@@ -308,7 +272,4 @@ suppressMessages(
     limitsize = FALSE,
     device = "svg")
 )
-
-
-cat("Model done")
-system(q(save = "no", ))
+cat('Model done')

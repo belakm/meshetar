@@ -7,7 +7,8 @@ conn <- DBI::dbConnect(RSQLite::SQLite(), "database.sqlite")
 
 # Load the trained model from the file
 # model <- readRDS("models/prediction_model.rds")
-model <- keras::load_model_hdf5("models/prediction_model.h5")
+model <- keras::load_model_hdf5("models/prediction_model.keras")
+history <- readRDS("models/prediction_model.rds")
 # Query the klines table and retrieve the latest data for the chosen crypto pair
 query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
                  high, 
@@ -52,19 +53,9 @@ tech_ind_normal <- as.matrix(
 ) |> keras::array_reshape(dim = dim(tech_ind))
 
 # Use the model to predict whether to buy or sell
+prediction <- predict(model, tail(tech_ind_normal, 1))
+y_labs <-  c("buy",  "hold", "sell")
 
-source(paste0(here::here(), "/models/functions/predict_nnet.R"))
-
-suppressWarnings(
-  prediction <- predict_nnet(nn_model = model, data_to_predict = tail(tech_ind_normal, 1))
-)
-output <- unlist(prediction)
-
-# Output either 1 (buy) or 0 (do not buy)
-# output <- ifelse(prediction == 1, "buy",
-#                  ifelse(prediction == 0, "hold",
-#                         ifelse(prediction == -1, "sell", "unknown")))
+output <- y_labs[which(prediction == max(prediction))]
 cat(output)
-# cat(paste("Optimal hold period:", model$optimal_hold_period, "candles"))
 
-    

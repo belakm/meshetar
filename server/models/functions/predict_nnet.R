@@ -15,6 +15,8 @@ predict_nnet <- function(nn_model, data_to_predict){
   # which_rep <- which(
   #   nn_model$result.matrix[1, ]== min(nn_model$result.matrix[1, ])) 
 
+predict(model, as.matrix(tail(tech_ind_normal)))
+
   # Compute output of the neural net
   prediction <- data.frame(
     stats::predict(

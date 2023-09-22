@@ -55,11 +55,11 @@ add_ta <- function(candles_df){
 
   #bullish indicator
   # print("sma20 before")
-  ma20 <- TTR::SMA(close_price, n = 20)
-  # print("sma20 after")
-  ma50 <- TTR::SMA(close_price, n = 50)
-  # print("sma50 after")
-  bullish <- ifelse(ma20 > ma50, 1, 0) # Create a bullish dummy variable based on the moving average crossover
+  # ma20 <- TTR::SMA(close_price, n = 20)
+  # # print("sma20 after")
+  # ma50 <- TTR::SMA(close_price, n = 50)
+  # # print("sma50 after")
+  # bullish <- ifelse(ma20 > ma50, 1, 0) # Create a bullish dummy variable based on the moving average crossover
   volume <- con_OHLC$volume
 
   TA <- data.frame(sma,
@@ -89,9 +89,9 @@ add_ta <- function(candles_df){
                    mfi,
                    sar, 
                    # volat, 
-                   ma20, 
-                   ma50, 
-                   bullish,
+                   # ma20, 
+                   # ma50, 
+                   # bullish,
                    volume)
   # print("dataframe TA constructed")
   TA <- xts::reclass(TA, con_OHLC_quantmod)
