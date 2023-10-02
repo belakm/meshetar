@@ -1518,7 +1518,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
- "yata",
 ]
 
 [[package]]
@@ -3921,15 +3920,6 @@ name = "yansi"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09041cd90cf85f7f8b2df60c646f853b7f535ce68f85244eb6731cf89fa498ec"
-
-[[package]]
-name = "yata"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb00aaff0419cec399fc84ae1d7209b4121612686d00a094d660e895667af283"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "yeslogic-fontconfig-sys"

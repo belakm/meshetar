@@ -1,27 +1,46 @@
 pub mod error;
 pub mod sqlite;
 
-use crate::portfolio::{
-    account::Account,
-    balance::{Balance, BalanceAsset, BalanceSheet},
+use std::collections::HashMap;
+
+use crate::{
+    assets::Asset,
+    portfolio::{
+        account::Account,
+        balance::{
+            Balance, BalanceId, ExchangeBalance, ExchangeBalanceAsset, ExchangeBalanceSheet,
+        },
+        position::{determine_position_id, Position, PositionId},
+    },
 };
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 use self::{error::DatabaseError, sqlite::DB_POOL};
 
-pub struct Database {}
-
+pub struct Database {
+    open_positions: HashMap<PositionId, Position>,
+    closed_positions: HashMap<String, Vec<Position>>,
+    current_balances: HashMap<BalanceId, Balance>,
+}
 impl Database {
     pub async fn new() -> Result<Database, DatabaseError> {
         sqlite::initialize().await?;
-        Ok(Database {})
+        Ok(Database {
+            open_positions: HashMap::new(),
+            closed_positions: HashMap::new(),
+            current_balances: HashMap::new(),
+        })
     }
 
-    pub async fn set_balance(&mut self, balance: Balance) -> Result<(), DatabaseError> {
+    pub async fn set_exchange_balance(
+        &mut self,
+        balance: ExchangeBalance,
+    ) -> Result<(), DatabaseError> {
         let connection = DB_POOL.get().unwrap();
         let mut tx = connection.begin().await?;
         let timestamp: String = DateTime::to_rfc3339(&Utc::now());
-        let balance_sheet: BalanceSheet = sqlx::query_as(
+        let balance_sheet: ExchangeBalanceSheet = sqlx::query_as(
         "INSERT INTO balance_sheets (timestamp, btc_valuation, busd_valuation) VALUES (?1, 0.0, 0.0) RETURNING *",
     )
     .bind(timestamp)
@@ -77,9 +96,9 @@ impl Database {
         Ok(())
     }
 
-    pub async fn get_balance(&mut self) -> Result<Balance, DatabaseError> {
+    pub async fn get_exchange_balance(&mut self) -> Result<ExchangeBalance, DatabaseError> {
         let connection = DB_POOL.get().unwrap();
-        let balance_sheet: BalanceSheet = sqlx::query_as(
+        let balance_sheet: ExchangeBalanceSheet = sqlx::query_as(
             "SELECT * FROM balance_sheets WHERE id = (SELECT MAX(id) FROM balance_sheets)",
         )
         .fetch_one(connection)
@@ -92,12 +111,12 @@ impl Database {
             WHERE balance_sheet_id = {:?}",
             &balance_sheet.id
         );
-        let balances: Vec<BalanceAsset> = sqlx::query_as(query)
+        let balances: Vec<ExchangeBalanceAsset> = sqlx::query_as(query)
             .fetch_all(connection)
             .await
             .map_err(|_| DatabaseError::ReadError)?;
 
-        Ok(Balance {
+        Ok(ExchangeBalance {
             timestamp: balance_sheet.timestamp,
             btc_valuation: balance_sheet.btc_valuation,
             busd_valuation: balance_sheet.busd_valuation,
@@ -151,4 +170,82 @@ impl Database {
             .map_err(|_| DatabaseError::ReadError)?;
         Ok(account)
     }
+
+    pub fn set_balance(&mut self, engine_id: Uuid, balance: Balance) -> Result<(), DatabaseError> {
+        self.current_balances
+            .insert(Balance::balance_id(engine_id), balance);
+        Ok(())
+    }
+
+    pub fn get_balance(&mut self, engine_id: Uuid) -> Result<Balance, DatabaseError> {
+        self.current_balances
+            .get(&Balance::balance_id(engine_id))
+            .copied()
+            .ok_or(DatabaseError::DataMissing)
+    }
+
+    pub fn set_open_position(&mut self, position: Position) -> Result<(), DatabaseError> {
+        self.open_positions
+            .insert(position.position_id.clone(), position);
+        Ok(())
+    }
+
+    pub fn get_open_position(
+        &mut self,
+        position_id: &PositionId,
+    ) -> Result<Option<Position>, DatabaseError> {
+        Ok(self.open_positions.get(position_id).map(Position::clone))
+    }
+
+    pub fn get_open_positions(
+        &mut self,
+        core_id: Uuid,
+        assets: Vec<Asset>,
+    ) -> Result<Vec<Position>, DatabaseError> {
+        Ok(assets
+            .into_iter()
+            .filter_map(|asset| {
+                self.open_positions
+                    .get(&determine_position_id(core_id, &asset))
+                    .map(Position::clone)
+            })
+            .collect())
+    }
+
+    pub fn remove_position(
+        &mut self,
+        position_id: &String,
+    ) -> Result<Option<Position>, DatabaseError> {
+        Ok(self.open_positions.remove(position_id))
+    }
+
+    pub fn set_exited_position(
+        &mut self,
+        core_id: Uuid,
+        position: Position,
+    ) -> Result<(), DatabaseError> {
+        let exited_positions_key = determine_exited_positions_id(core_id);
+
+        match self.closed_positions.get_mut(&exited_positions_key) {
+            None => {
+                self.closed_positions
+                    .insert(exited_positions_key, vec![position]);
+            }
+            Some(closed_positions) => closed_positions.push(position),
+        }
+        Ok(())
+    }
+
+    fn get_exited_positions(&mut self, engine_id: Uuid) -> Result<Vec<Position>, DatabaseError> {
+        Ok(self
+            .closed_positions
+            .get(&determine_exited_positions_id(engine_id))
+            .map(Vec::clone)
+            .unwrap_or_else(Vec::new))
+    }
+}
+
+pub type ExitedPositionsId = String;
+pub fn determine_exited_positions_id(engine_id: Uuid) -> ExitedPositionsId {
+    format!("positions_exited_{}", engine_id)
 }

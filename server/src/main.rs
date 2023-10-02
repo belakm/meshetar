@@ -2,9 +2,9 @@ mod assets;
 mod core;
 mod database;
 mod events;
-mod model;
 mod plotting;
 mod portfolio;
+mod strategy;
 mod trading;
 mod utils;
 
@@ -13,7 +13,6 @@ use database::{error::DatabaseError, Database};
 use env_logger::Builder;
 use events::EventTx;
 use log::LevelFilter;
-use model::routes::create_new_model;
 use plotting::routes::plot_chart;
 use portfolio::routes::balance_sheet;
 use portfolio::{error::PortfolioError, Portfolio};
@@ -28,6 +27,7 @@ use rocket::{
     Error as RocketError, Request, Response,
 };
 use std::sync::Arc;
+use strategy::routes::create_new_model;
 use thiserror::Error;
 use tokio::sync::Mutex;
 use tokio::sync::{mpsc, watch};

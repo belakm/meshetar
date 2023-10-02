@@ -2,12 +2,28 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use crate::trading::meshetar::Pair;
+use crate::{
+    assets::MarketEvent,
+    portfolio::{
+        balance::Balance,
+        position::{Position, PositionExit, PositionUpdate},
+        FillEvent, OrderEvent,
+    },
+    strategy::Signal,
+    trading::SignalForceExit,
+};
 
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum Event {
-    Asset(Asset),
+    Market(MarketEvent),
     Balance(Balance),
+    Signal(Signal),
+    SignalForceExit(SignalForceExit),
+    Order(OrderEvent),
+    Fill(FillEvent),
+    PositionNew(Position),
+    PositionUpdate(PositionUpdate),
+    PositionExit(PositionExit),
 }
 
 // Messages to downstream consumers.

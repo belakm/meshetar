@@ -1,10 +1,7 @@
 pub mod error;
 
 use crate::{
-    assets::Asset,
-    database::Database,
-    portfolio::Portfolio,
-    trading::{Pair, Trader},
+    assets::Asset, database::Database, portfolio::Portfolio, trading::Trader,
     utils::binance_client::BinanceClient,
 };
 use error::CoreError;
@@ -25,6 +22,7 @@ pub enum Command {
 }
 
 pub struct Core {
+    id: Uuid,
     database: Database,
     portfolio: Arc<Mutex<Portfolio>>,
     binance_client: BinanceClient,
@@ -52,6 +50,7 @@ impl Core {
                     if let Some(command) = command {
                         match command {
                             Command::CreateModel(_pair) => {
+
                             },
                             Command::ExitPosition(asset) => {
                                 self.exit_position(asset).await;
@@ -75,13 +74,13 @@ impl Core {
         let traders = std::mem::take(&mut self.traders);
         let mut thread_handles = Vec::with_capacity(traders.len());
         for trader in traders.into_iter() {
-            let handle = tokio::spawn(move || trader.run());
+            let handle = tokio::spawn(async move { trader.run() });
             thread_handles.push(handle);
         }
         let (notify_transmitter, notify_receiver) = mpsc::channel(1);
         tokio::spawn(async move {
             for handle in thread_handles {
-                if let Err(err) = handle.join() {
+                if let Err(err) = handle.await {
                     error!(
                         error = &*format!("{:?}", err),
                         "Trader thread has panicked during execution",
@@ -187,6 +186,7 @@ impl CoreBuilder {
     }
     pub fn build(self) -> Result<Core, CoreError> {
         let core = Core {
+            id: Uuid::new_v4(),
             database: self
                 .database
                 .ok_or(CoreError::BuilderIncomplete("database"))?,

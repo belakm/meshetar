@@ -38,7 +38,17 @@ pub async fn setup_tables() -> Result<(), DatabaseError> {
     if let Some(connection) = connection {
         sqlx::query(
             "BEGIN;
-        CREATE TABLE IF NOT EXISTS balances (
+
+        CREATE TABLE IF NOT EXISTS balances {
+            core_id TEXT NOT NULL UNIQUE,
+            asset TEXT NOT NULL UNIQUE,
+            time DATETIME NOT NULL,
+            total REAL NOT NULL,
+            available REAL NOT NULL,
+            PRIMARY KEY (core_id, asset)
+        };
+
+        CREATE TABLE IF NOT EXISTS exchange_balances (
             asset TEXT NOT NULL,
             free REAL NOT NULL,
             locked REAL NOT NULL,
@@ -49,6 +59,7 @@ pub async fn setup_tables() -> Result<(), DatabaseError> {
         );
         CREATE TABLE IF NOT EXISTS balance_sheets (
             id INTEGER PRIMARY KEY,
+            engine_id STRING PRIMARY KEY,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             btc_valuation REAL NOT NULL,
             busd_valuation REAL NOT NULL
