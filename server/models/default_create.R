@@ -9,7 +9,6 @@ suppressMessages(
 source("models/functions/igc.R")
 igc()
 
-print("1")
 
 ## Connect to the SQLite database
 conn <- DBI::dbConnect(RSQLite::SQLite(), "database.sqlite")
@@ -135,13 +134,10 @@ igc()
 #clear keras session
 keras::k_clear_session()
 keras_nn_model <- keras::keras_model_sequential(input_shape = dim(x_train)[2]) |>
+  keras::layer_dense(dim(x_train)[2]*3, activation = "relu") |>
   keras::layer_dense(dim(x_train)[2]*2, activation = "relu") |>
-  keras::layer_dropout(0.2) |>
-  keras::layer_dense(dim(x_train)[2]*2, activation = "relu") |>
-  keras::layer_dropout(0.2) |>
   keras::layer_dense(dim(x_train)[2], activation = "relu") |>
-    keras::layer_dense(round(dim(x_train)[2]/2), activation = "relu") |>
-
+  keras::layer_dense(round(dim(x_train)[2]/2), activation = "relu") |>
   keras::layer_dense(ncol(y_train), activation = "sigmoid")
 
 summary(keras_nn_model)
@@ -154,7 +150,7 @@ keras_nn_model |> keras::compile(
   loss = 'categorical_crossentropy',
   optimizer = keras::optimizer_rmsprop(learning_rate = 0.01),
   metrics = c('accuracy'),
-  # loss_weights = class_weights_named  # Specify class weights
+  loss_weights = class_weights_named  # Specify class weights
 )
 
 # Define early stopping callback
@@ -182,22 +178,48 @@ keras_nn_model |>
 predicted_probs <- keras_nn_model |> 
   predict(as.matrix(x_test))
 
-adjust_conservativeness <- function(predicted_probs, conservative_factor){
-  buy_col <- which(y_labs == "buy")
-  sell_col <- which(y_labs == "sell")
+adjust_conservativeness <- function(predicted_probs, labels = y_labs){
   
-  predicted_probs[,c(buy_col, sell_col)] <- predicted_probs[,c(buy_col, sell_col)] + conservative_factor
+  buy_col <- which(labels == "buy")
+  sell_col <- which(labels == "sell")
+  hold_col <- which(labels == "hold")
+  
+  optimal_threshold <- function(predict, response) {
+    perf <- ROCR::performance(ROCR::prediction(predict, response), "sens", "spec")
+    df <- data.frame(cut = perf@alpha.values[[1]], sens = perf@x.values[[1]], spec = perf@y.values[[1]])
+    df[which.max(df$sens + df$spec), "cut"]
+  }
+  
+  # Calculate thresholds for buy and sell columns
+  buy_threshold <- optimal_threshold(predicted_probs[, buy_col], y_test[, buy_col])
+  sell_threshold <- optimal_threshold(predicted_probs[, sell_col], y_test[, sell_col])
+  
+  # Set buy column values to 1 where predicted_probs < buy_threshold, otherwise 0
+  predicted_probs[, buy_col] <- as.integer(predicted_probs[, buy_col] < buy_threshold)
+  
+  # Set sell column values to 1 where predicted_probs < sell_threshold, otherwise 0
+  predicted_probs[, sell_col] <- as.integer(predicted_probs[, sell_col] < sell_threshold)
+  
+  # If both sell and buy are 0, set hold to 1
+  predicted_probs[, hold_col] <- as.integer(rowSums(predicted_probs[, c(buy_col, sell_col)]) == 0)
+  
+  # If both buy and sell are 1, set buy and hold to 0
+  predicted_probs[, buy_col] <- ifelse(
+    predicted_probs[, buy_col] == 1 & predicted_probs[, sell_col] == 1,
+    yes = 0, no = predicted_probs[, buy_col])
+  
   predicted_classes <- apply(predicted_probs, 1, which.max)
+  attr(predicted_classes, "buy_threshold") <- buy_threshold
+  attr(predicted_classes, "sell_threshold") <- sell_threshold
   
   return(predicted_classes)
 }
 
-predicted_classes <- adjust_conservativeness(predicted_probs, 
-                                             conservative_factor = 0.2)
+predicted_classes <- adjust_conservativeness(predicted_probs)
 nnet_output <- data.frame(
   prediction = y_labs[predicted_classes])
 
-table(nnet_output)
+table(predicted_classes, y_test)
 
 n_matched_sell = sum(y_test[, 3] & nnet_output$prediction == "sell")
 n_missed_sell = sum(y_test[,3] & !nnet_output$prediction == "sell")
@@ -211,7 +233,7 @@ print(data.frame(
   n_missed_buy )
 )
 # Save the trained model to a file-
-keras::save_model_hdf5(keras_nn_model, "models/prediction_model.keras")
+keras::save_model_tf(keras_nn_model, "models/prediction_model.keras")
 saveRDS(history, "models/prediction_model.rds")
 
 # if you are predicting test set:
