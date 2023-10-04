@@ -1,6 +1,5 @@
-use thiserror::Error;
-
 use crate::portfolio::error::PortfolioError;
+use thiserror::Error;
 
 /// All errors generated in the barter::portfolio module.
 #[derive(Error, Debug)]

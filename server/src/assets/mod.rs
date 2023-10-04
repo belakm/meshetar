@@ -1,7 +1,7 @@
 pub mod asset_ticker;
 pub mod book;
 pub mod routes;
-pub mod technical_analysis;
+// pub mod technical_analysis;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

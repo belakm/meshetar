@@ -1,14 +1,6 @@
 pub mod error;
 pub mod execution;
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use std::{collections::VecDeque, sync::Arc};
-use strum::{Display, EnumString};
-use tokio::sync::{mpsc, Mutex};
-use tracing::{debug, warn};
-use uuid::Uuid;
-
 use crate::{
     assets::{Asset, Feed, MarketFeed},
     core::Command,
@@ -17,6 +9,13 @@ use crate::{
     portfolio::Portfolio,
     strategy::Strategy,
 };
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::{collections::VecDeque, sync::Arc};
+use strum::{Display, EnumString};
+use tokio::sync::{mpsc, Mutex};
+use tracing::{debug, warn};
+use uuid::Uuid;
 
 use self::{error::TraderError, execution::Execution};
 

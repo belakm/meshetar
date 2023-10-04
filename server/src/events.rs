@@ -7,10 +7,10 @@ use crate::{
     portfolio::{
         balance::Balance,
         position::{Position, PositionExit, PositionUpdate},
-        FillEvent, OrderEvent,
+        OrderEvent,
     },
     strategy::Signal,
-    trading::SignalForceExit,
+    trading::{execution::FillEvent, SignalForceExit},
 };
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]

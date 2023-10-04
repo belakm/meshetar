@@ -27,7 +27,7 @@ pub struct Core {
     portfolio: Arc<Mutex<Portfolio>>,
     binance_client: BinanceClient,
     command_reciever: Receiver<Command>,
-    trader_command_transmitters: HashMap<Asset, mpsc::Sender<Command>>,
+    command_transmitters: HashMap<Asset, mpsc::Sender<Command>>,
     traders: Vec<Trader>,
 }
 
@@ -73,8 +73,8 @@ impl Core {
     async fn run_traders(&mut self) -> mpsc::Receiver<bool> {
         let traders = std::mem::take(&mut self.traders);
         let mut thread_handles = Vec::with_capacity(traders.len());
-        for trader in traders.into_iter() {
-            let handle = tokio::spawn(async move { trader.run() });
+        for mut trader in traders.into_iter() {
+            let handle = tokio::spawn(async move { trader.run().await });
             thread_handles.push(handle);
         }
         let (notify_transmitter, notify_receiver) = mpsc::channel(1);
@@ -94,7 +94,7 @@ impl Core {
     async fn terminate_traders(&self, message: String) {
         self.exit_all_positions().await;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        for (market, command_transmitter) in self.trader_command_transmitters.iter() {
+        for (market, command_transmitter) in self.command_transmitters.iter() {
             if command_transmitter
                 .send(Command::Terminate(message.clone()))
                 .await
@@ -105,7 +105,7 @@ impl Core {
         }
     }
     async fn exit_all_positions(&self) {
-        for (asset, command_transmitter) in self.trader_command_transmitters.iter() {
+        for (asset, command_transmitter) in self.command_transmitters.iter() {
             if command_transmitter
                 .send(Command::ExitPosition(asset.clone()))
                 .await
@@ -120,9 +120,7 @@ impl Core {
         }
     }
     async fn exit_position(&self, asset: Asset) {
-        if let Some((market_ref, command_tx)) =
-            self.trader_command_transmitters.get_key_value(&asset)
-        {
+        if let Some((market_ref, command_tx)) = self.command_transmitters.get_key_value(&asset) {
             if command_tx.send(Command::ExitPosition(asset)).await.is_err() {
                 error!(
                     market = &*format!("{:?}", market_ref),
@@ -140,12 +138,12 @@ impl Core {
     }
 }
 
-struct CoreBuilder {
+pub struct CoreBuilder {
     database: Option<Database>,
     portfolio: Option<Arc<Mutex<Portfolio>>>,
     binance_client: Option<BinanceClient>,
     command_reciever: Option<Receiver<Command>>,
-    trader_command_transmitters: Option<HashMap<Asset, mpsc::Sender<Command>>>,
+    command_transmitters: Option<HashMap<Asset, mpsc::Sender<Command>>>,
     traders: Option<Vec<Trader>>,
 }
 
@@ -156,7 +154,7 @@ impl CoreBuilder {
             portfolio: None,
             binance_client: None,
             command_reciever: None,
-            trader_command_transmitters: None,
+            command_transmitters: None,
             traders: None,
         }
     }
@@ -178,7 +176,7 @@ impl CoreBuilder {
             ..self
         }
     }
-    pub fn command_rx(self, command_reciever: Receiver<Command>) -> Self {
+    pub fn command_reciever(self, command_reciever: Receiver<Command>) -> Self {
         CoreBuilder {
             command_reciever: Some(command_reciever),
             ..self
@@ -199,8 +197,8 @@ impl CoreBuilder {
             command_reciever: self
                 .command_reciever
                 .ok_or(CoreError::BuilderIncomplete("command reciever"))?,
-            trader_command_transmitters: self
-                .trader_command_transmitters
+            command_transmitters: self
+                .command_transmitters
                 .ok_or(CoreError::BuilderIncomplete("trader command transmitters"))?,
             traders: self
                 .traders

@@ -14,7 +14,6 @@ use env_logger::Builder;
 use events::EventTx;
 use log::LevelFilter;
 use plotting::routes::plot_chart;
-use portfolio::routes::balance_sheet;
 use portfolio::{error::PortfolioError, Portfolio};
 use rocket::{
     catch,
@@ -107,9 +106,9 @@ async fn main() -> Result<(), MainError> {
     builder.filter(Some("sqlx"), LevelFilter::Warn);
     builder.init();
 
-    let (_command_tx, command_rx) = mpsc::channel::<Command>(20);
-    let (event_tx, event_rx) = mpsc::unbounded_channel();
-    let event_tx = EventTx::new(event_tx);
+    let (command_transmitter, command_receiver) = mpsc::channel::<Command>(20);
+    let (event_transmitter, event_receiver) = mpsc::unbounded_channel();
+    let event_transmitter = EventTx::new(event_transmitter);
 
     let portfolio: Arc<Mutex<Portfolio>> = Arc::new(Mutex::new(
         Portfolio::builder()
@@ -123,11 +122,11 @@ async fn main() -> Result<(), MainError> {
             .database(Database::new().await?)
             .binance_client(BinanceClient::new().map_err(MainError::from).await?)
             .portfolio(portfolio)
-            .command_rx(command_rx)
+            .command_reciever(command_receiver)
             .build(),
     ));
 
-    let ignition = rocket::build()
+    rocket::build()
         .attach(CORS)
         .manage(core)
         .mount(
@@ -135,7 +134,7 @@ async fn main() -> Result<(), MainError> {
             routes![
                 all_options, // needed for Rocket to serve to browsers
                 create_new_model,
-                balance_sheet,
+                //balance_sheet,
                 plot_chart,
                 /*meshetar_status,
                 interval_put,
