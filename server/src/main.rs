@@ -8,12 +8,12 @@ mod strategy;
 mod trading;
 mod utils;
 
+use assets::{Asset, Candle, MarketEvent, MarketEventDetail, MarketFeed};
 use core::{Command, Core};
 use database::{error::DatabaseError, Database};
 use env_logger::Builder;
-use events::EventTx;
+use events::{Event, EventTx};
 use log::LevelFilter;
-use plotting::routes::plot_chart;
 use portfolio::{error::PortfolioError, Portfolio};
 use rocket::{
     catch,
@@ -26,11 +26,13 @@ use rocket::{
     Error as RocketError, Request, Response,
 };
 use std::sync::Arc;
-use strategy::routes::create_new_model;
 use thiserror::Error;
 use tokio::sync::Mutex;
 use tokio::sync::{mpsc, watch};
+use tracing::{debug, error, info};
+use trading::Trader;
 use utils::binance_client::{self, BinanceClient, BinanceClientError};
+use uuid::Uuid;
 
 pub struct CORS;
 
@@ -98,18 +100,25 @@ pub struct TaskControl {
     receiver: watch::Receiver<bool>,
 }
 
+fn main() {
+    match run() {
+        Ok(_) => info!("Leaving Meshetar. See you soon! :)"),
+        Err(e) => error!("Whoops, error: {}", e),
+    }
+}
+
 #[rocket::main]
-async fn main() -> Result<(), MainError> {
+async fn run() -> Result<(), MainError> {
     // Sets logging for sqlx to warn and above, info logs are too verbose
     let mut builder = Builder::new();
     builder.filter(None, LevelFilter::Info); // a default for other libs
     builder.filter(Some("sqlx"), LevelFilter::Warn);
     builder.init();
 
-    let (command_transmitter, command_receiver) = mpsc::channel::<Command>(20);
+    let core_id = Uuid::new_v4();
+
     let (event_transmitter, event_receiver) = mpsc::unbounded_channel();
     let event_transmitter = EventTx::new(event_transmitter);
-
     let portfolio: Arc<Mutex<Portfolio>> = Arc::new(Mutex::new(
         Portfolio::builder()
             .database(Database::new().map_err(MainError::from).await?)
@@ -117,8 +126,26 @@ async fn main() -> Result<(), MainError> {
             .map_err(MainError::from)?,
     ));
 
+    let mut traders = Vec::new();
+    let (command_transmitter, command_receiver) = mpsc::channel::<Command>(20);
+    let (trader_command_transmitter, trader_command_receiver) = mpsc::channel::<Command>(20);
+
+    traders.push(
+        Trader::builder()
+            .core_id(core_id)
+            .asset(Asset::BTCUSDT)
+            .command_reciever(trader_command_receiver)
+            .event_transmitter(event_transmitter)
+            .portfolio(Arc::clone(&portfolio))
+            .market_feed(MarketFeed {
+                market_receiver: stream_market_event_trades().await,
+            })
+            .build(),
+    );
+
     let core = Arc::new(Mutex::new(
         Core::builder()
+            .id(core_id)
             .database(Database::new().await?)
             .binance_client(BinanceClient::new().map_err(MainError::from).await?)
             .portfolio(portfolio)
@@ -133,17 +160,17 @@ async fn main() -> Result<(), MainError> {
             "/",
             routes![
                 all_options, // needed for Rocket to serve to browsers
-                create_new_model,
-                //balance_sheet,
-                plot_chart,
-                /*meshetar_status,
-                interval_put,
-                stop_all_operations,
-                fetch_history,
-                clear_history,
-                last_kline_time,
-                run,
-                plot_chart,*/
+                             // create_new_model,
+                             // balance_sheet,
+                             // plot_chart,
+                             // meshetar_status,
+                             // interval_put,
+                             // stop_all_operations,
+                             // fetch_history,
+                             // clear_history,
+                             // last_kline_time,
+                             // run,
+                             // plot_chart,
             ],
         )
         .mount("/", FileServer::new("static", Options::None).rank(1))
@@ -153,4 +180,120 @@ async fn main() -> Result<(), MainError> {
         .await?;
 
     Ok(())
+}
+
+/// TESTING
+///
+///
+async fn stream_market_event_trades() -> mpsc::UnboundedReceiver<MarketEvent> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        let mut candles = load_json_market_event_candles().into_iter();
+        while let Some(event) = candles.next() {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            tx.send(event);
+        }
+    });
+    rx
+}
+
+fn load_json_market_event_candles() -> Vec<MarketEvent> {
+    let candles = r#"[
+  {
+    "start_time": "2022-04-05 20:00:00.000000000 UTC",
+    "close_time": "2022-04-05 21:00:00.000000000 UTC",
+    "open": 1000.0,
+    "high": 1100.0,
+    "low": 900.0,
+    "close": 1050.0,
+    "volume": 1000000000.0,
+    "trade_count": 100
+  },
+  {
+    "start_time": "2022-04-05 21:00:00.000000000 UTC",
+    "close_time": "2022-04-05 22:00:00.000000000 UTC",
+    "open": 1050.0,
+    "high": 1100.0,
+    "low": 800.0,
+    "close": 1060.0,
+    "volume": 1000000000.0,
+    "trade_count": 50
+  },
+  {
+    "start_time": "2022-04-05 22:00:00.000000000 UTC",
+    "close_time": "2022-04-05 23:00:00.000000000 UTC",
+    "open": 1060.0,
+    "high": 1200.0,
+    "low": 800.0,
+    "close": 1200.0,
+    "volume": 1000000000.0,
+    "trade_count": 200
+  },
+  {
+    "start_time": "2022-04-05 23:00:00.000000000 UTC",
+    "close_time": "2022-04-06 00:00:00.000000000 UTC",
+    "open": 1200.0,
+    "high": 1200.0,
+    "low": 1100.0,
+    "close": 1300.0,
+    "volume": 1000000000.0,
+    "trade_count": 500
+  }
+]"#;
+
+    let candles =
+        serde_json::from_str::<Vec<Candle>>(&candles).expect("failed to parse candles String");
+
+    candles
+        .into_iter()
+        .map(|candle| MarketEvent {
+            time: candle.close_time,
+            asset: Asset::BTCUSDT,
+            detail: MarketEventDetail::Candle(candle),
+        })
+        .collect()
+}
+
+// Listen to Events that occur in the Engine. These can be used for updating event-sourcing,
+// updating dashboard, etc etc.
+async fn listen_to_engine_events(mut event_rx: mpsc::UnboundedReceiver<Event>) {
+    while let Some(event) = event_rx.recv().await {
+        debug!("EVENT: {:?}\n", &event);
+        match event {
+            Event::Market(_) => {
+                // Market Event occurred in Engine
+            }
+            Event::Signal(signal) => {
+                // Signal Event occurred in Engine
+                println!("{signal:?}");
+            }
+            Event::SignalForceExit(_) => {
+                // SignalForceExit Event occurred in Engine
+            }
+            Event::Order(new_order) => {
+                // OrderNew Event occurred in Engine
+                println!("{new_order:?}");
+            }
+            Event::Fill(fill_event) => {
+                // Fill Event occurred in Engine
+                println!("{fill_event:?}");
+            }
+            Event::PositionNew(new_position) => {
+                // PositionNew Event occurred in Engine
+                println!("{new_position:?}");
+            }
+            Event::PositionUpdate(updated_position) => {
+                // PositionUpdate Event occurred in Engine
+                println!("{updated_position:?}");
+            }
+            Event::PositionExit(exited_position) => {
+                // PositionExit Event occurred in Engine
+                println!("{exited_position:?}");
+            }
+            Event::Balance(balance_update) => {
+                // Balance update Event occurred in Engine
+                println!("{balance_update:?}");
+            }
+        }
+    }
 }

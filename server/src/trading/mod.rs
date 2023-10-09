@@ -211,14 +211,14 @@ impl TraderBuilder {
         }
     }
 
-    pub fn command_rx(self, value: mpsc::Receiver<Command>) -> Self {
+    pub fn command_reciever(self, value: mpsc::Receiver<Command>) -> Self {
         Self {
             command_reciever: Some(value),
             ..self
         }
     }
 
-    pub fn event_tx(self, value: EventTx) -> Self {
+    pub fn event_transmitter(self, value: EventTx) -> Self {
         Self {
             event_transmitter: Some(value),
             ..self

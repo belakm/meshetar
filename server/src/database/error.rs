@@ -10,6 +10,6 @@ pub enum DatabaseError {
     ReadError,
     #[error("Data was not found in the database")]
     DataMissing,
-    #[error("Database initialization problem")]
-    Initialization,
+    #[error("Database initialization problem: {0}")]
+    Initialization(String),
 }

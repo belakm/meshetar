@@ -139,6 +139,7 @@ impl Core {
 }
 
 pub struct CoreBuilder {
+    id: Option<Uuid>,
     database: Option<Database>,
     portfolio: Option<Arc<Mutex<Portfolio>>>,
     binance_client: Option<BinanceClient>,
@@ -150,12 +151,19 @@ pub struct CoreBuilder {
 impl CoreBuilder {
     pub fn new() -> Self {
         CoreBuilder {
+            id: None,
             database: None,
             portfolio: None,
             binance_client: None,
             command_reciever: None,
             command_transmitters: None,
             traders: None,
+        }
+    }
+    pub fn id(self, id: Uuid) -> Self {
+        CoreBuilder {
+            id: Some(id),
+            ..self
         }
     }
     pub fn database(self, database: Database) -> Self {
@@ -184,7 +192,7 @@ impl CoreBuilder {
     }
     pub fn build(self) -> Result<Core, CoreError> {
         let core = Core {
-            id: Uuid::new_v4(),
+            id: self.id.ok_or(CoreError::BuilderIncomplete("core_id"))?,
             database: self
                 .database
                 .ok_or(CoreError::BuilderIncomplete("database"))?,

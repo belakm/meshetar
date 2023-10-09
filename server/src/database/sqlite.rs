@@ -21,15 +21,15 @@ pub async fn set_connection() -> Result<(), DatabaseError> {
     // Creates the database file if it doesnt exist
     let database_path = "database.sqlite";
     if Path::new(database_path).exists() == false {
-        File::create(database_path).map_err(|_| DatabaseError::Initialization)?;
+        File::create(database_path).map_err(|e| DatabaseError::Initialization(e.to_string()))?;
     }
     // Creates a new pool
     let pool = SqlitePool::connect("database.sqlite")
         .await
-        .map_err(|_| DatabaseError::Initialization)?;
+        .map_err(|e| DatabaseError::Initialization(e.to_string()))?;
     DB_POOL
         .set(pool)
-        .map_err(|_| DatabaseError::Initialization)?;
+        .map_err(|e| DatabaseError::Initialization(e.to_string()))?;
     Ok(())
 }
 
@@ -152,7 +152,7 @@ pub async fn setup_tables() -> Result<(), DatabaseError> {
         )
         .execute(connection)
         .await
-        .map_err(|_| DatabaseError::Initialization)?;
+        .map_err(|e| DatabaseError::Initialization(e.to_string()))?;
     }
     Ok(())
 }

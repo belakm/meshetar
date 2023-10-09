@@ -90,17 +90,20 @@ pub enum Side {
 }
 
 pub struct MarketFeed {
-    pub market_reciever: mpsc::UnboundedReceiver<MarketEvent>,
+    pub market_receiver: mpsc::UnboundedReceiver<MarketEvent>,
 }
 impl MarketFeed {
     pub fn next(&mut self) -> Feed {
         loop {
-            match self.market_reciever.try_recv() {
+            match self.market_receiver.try_recv() {
                 Ok(event) => break Feed::Next(event),
                 Err(mpsc::error::TryRecvError::Empty) => continue,
                 Err(mpsc::error::TryRecvError::Disconnected) => break Feed::Finished,
             }
         }
+    }
+    pub fn new(market_receiver: mpsc::UnboundedReceiver<MarketEvent>) -> Self {
+        Self { market_receiver }
     }
 }
 
