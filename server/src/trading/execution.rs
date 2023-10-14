@@ -25,6 +25,9 @@ impl Fees {
 pub type FeeAmount = f64;
 
 impl Execution {
+    pub fn new() -> Self {
+        Execution {}
+    }
     pub fn generate_fill(&self, order: &OrderEvent) -> Result<FillEvent, TraderError> {
         Ok(FillEvent {
             time: Utc::now(),

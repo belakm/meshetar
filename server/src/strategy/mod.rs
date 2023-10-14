@@ -51,6 +51,9 @@ pub struct SignalStrength(pub f64);
 
 pub struct Strategy {}
 impl Strategy {
+    pub fn new() -> Self {
+        Strategy {}
+    }
     pub async fn generate_signal(
         &mut self,
         _market_event: &MarketEvent,

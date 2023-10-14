@@ -104,6 +104,12 @@ impl PortfolioBuilder {
             ..self
         }
     }
+    pub fn core_id(self, value: Uuid) -> Self {
+        Self {
+            core_id: Some(value),
+            ..self
+        }
+    }
     pub fn build(self) -> Result<Portfolio, PortfolioError> {
         let mut portfolio = Portfolio {
             core_id: self

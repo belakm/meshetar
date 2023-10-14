@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{
     assets::MarketEvent,
@@ -77,5 +77,11 @@ impl EventTx {
             receiver_dropped: false,
             event_tx,
         }
+    }
+}
+
+pub async fn core_events_listener(mut event_receiver: mpsc::UnboundedReceiver<Event>) {
+    while let Some(event) = event_receiver.recv().await {
+        info!("{:?}", event);
     }
 }

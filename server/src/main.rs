@@ -9,10 +9,10 @@ mod trading;
 mod utils;
 
 use assets::{Asset, Candle, MarketEvent, MarketEventDetail, MarketFeed};
-use core::{Command, Core};
+use core::{error::CoreError, Command, Core};
 use database::{error::DatabaseError, Database};
 use env_logger::Builder;
-use events::{Event, EventTx};
+use events::{core_events_listener, Event, EventTx};
 use log::LevelFilter;
 use portfolio::{error::PortfolioError, Portfolio};
 use rocket::{
@@ -25,12 +25,13 @@ use rocket::{
     http::Status,
     Error as RocketError, Request, Response,
 };
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc, time::Duration};
+use strategy::Strategy;
 use thiserror::Error;
 use tokio::sync::Mutex;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, error, info};
-use trading::Trader;
+use trading::{error::TraderError, execution::Execution, Trader};
 use utils::binance_client::{self, BinanceClient, BinanceClientError};
 use uuid::Uuid;
 
@@ -42,6 +43,10 @@ enum MainError {
     Portfolio(#[from] PortfolioError),
     #[error("Database error: {0}")]
     Database(#[from] DatabaseError),
+    #[error("Core error: {0}")]
+    Core(#[from] CoreError),
+    #[error("Trader error: {0}")]
+    Trader(#[from] TraderError),
     #[error("Binance client error: {0}")]
     BinanceClient(#[from] BinanceClientError),
     #[error("Rocket server error: {0}")]
@@ -122,6 +127,7 @@ async fn run() -> Result<(), MainError> {
     let portfolio: Arc<Mutex<Portfolio>> = Arc::new(Mutex::new(
         Portfolio::builder()
             .database(Database::new().map_err(MainError::from).await?)
+            .core_id(core_id.clone())
             .build()
             .map_err(MainError::from)?,
     ));
@@ -129,6 +135,7 @@ async fn run() -> Result<(), MainError> {
     let mut traders = Vec::new();
     let (command_transmitter, command_receiver) = mpsc::channel::<Command>(20);
     let (trader_command_transmitter, trader_command_receiver) = mpsc::channel::<Command>(20);
+    let command_transmitters = HashMap::from([(Asset::BTCUSDT, trader_command_transmitter)]);
 
     traders.push(
         Trader::builder()
@@ -140,44 +147,47 @@ async fn run() -> Result<(), MainError> {
             .market_feed(MarketFeed {
                 market_receiver: stream_market_event_trades().await,
             })
-            .build(),
+            .strategy(Strategy::new())
+            .execution(Execution::new())
+            .build()?,
     );
 
-    let core = Arc::new(Mutex::new(
-        Core::builder()
-            .id(core_id)
-            .database(Database::new().await?)
-            .binance_client(BinanceClient::new().map_err(MainError::from).await?)
-            .portfolio(portfolio)
-            .command_reciever(command_receiver)
-            .build(),
-    ));
+    let mut core = Core::builder()
+        .id(core_id)
+        .binance_client(BinanceClient::new().map_err(MainError::from).await?)
+        .portfolio(portfolio)
+        .command_reciever(command_receiver)
+        .command_transmitters(command_transmitters)
+        .traders(traders)
+        .build()?;
 
-    rocket::build()
-        .attach(CORS)
-        .manage(core)
-        .mount(
-            "/",
-            routes![
-                all_options, // needed for Rocket to serve to browsers
-                             // create_new_model,
-                             // balance_sheet,
-                             // plot_chart,
-                             // meshetar_status,
-                             // interval_put,
-                             // stop_all_operations,
-                             // fetch_history,
-                             // clear_history,
-                             // last_kline_time,
-                             // run,
-                             // plot_chart,
-            ],
-        )
-        .mount("/", FileServer::new("static", Options::None).rank(1))
-        .register("/", catchers![internal_error, not_found, default])
-        .launch()
-        .map_err(MainError::from)
-        .await?;
+    tokio::spawn(core_events_listener(event_receiver));
+    let _ = tokio::time::timeout(Duration::from_secs(5), core.run()).await;
+
+    // rocket::build()
+    //     .attach(CORS)
+    //     .mount(
+    //         "/",
+    //         routes![
+    //             all_options, // needed for Rocket to serve to browsers
+    //                          // create_new_model,
+    //                          // balance_sheet,
+    //                          // plot_chart,
+    //                          // meshetar_status,
+    //                          // interval_put,
+    //                          // stop_all_operations,
+    //                          // fetch_history,
+    //                          // clear_history,
+    //                          // last_kline_time,
+    //                          // run,
+    //                          // plot_chart,
+    //         ],
+    //     )
+    //     .mount("/", FileServer::new("static", Options::None).rank(1))
+    //     .register("/", catchers![internal_error, not_found, default])
+    //     .launch()
+    //     .map_err(MainError::from)
+    //     .await?;
 
     Ok(())
 }

@@ -23,7 +23,6 @@ pub enum Command {
 
 pub struct Core {
     id: Uuid,
-    database: Database,
     portfolio: Arc<Mutex<Portfolio>>,
     binance_client: BinanceClient,
     command_reciever: Receiver<Command>,
@@ -45,7 +44,6 @@ impl Core {
                 _ = trading_stopped.recv() => {
                     break;
                 },
-
                 command = self.command_reciever.recv() => {
                     if let Some(command) = command {
                         match command {
@@ -140,7 +138,6 @@ impl Core {
 
 pub struct CoreBuilder {
     id: Option<Uuid>,
-    database: Option<Database>,
     portfolio: Option<Arc<Mutex<Portfolio>>>,
     binance_client: Option<BinanceClient>,
     command_reciever: Option<Receiver<Command>>,
@@ -152,7 +149,6 @@ impl CoreBuilder {
     pub fn new() -> Self {
         CoreBuilder {
             id: None,
-            database: None,
             portfolio: None,
             binance_client: None,
             command_reciever: None,
@@ -163,12 +159,6 @@ impl CoreBuilder {
     pub fn id(self, id: Uuid) -> Self {
         CoreBuilder {
             id: Some(id),
-            ..self
-        }
-    }
-    pub fn database(self, database: Database) -> Self {
-        CoreBuilder {
-            database: Some(database),
             ..self
         }
     }
@@ -190,12 +180,21 @@ impl CoreBuilder {
             ..self
         }
     }
+    pub fn command_transmitters(self, value: HashMap<Asset, mpsc::Sender<Command>>) -> Self {
+        CoreBuilder {
+            command_transmitters: Some(value),
+            ..self
+        }
+    }
+    pub fn traders(self, value: Vec<Trader>) -> Self {
+        CoreBuilder {
+            traders: Some(value),
+            ..self
+        }
+    }
     pub fn build(self) -> Result<Core, CoreError> {
         let core = Core {
             id: self.id.ok_or(CoreError::BuilderIncomplete("core_id"))?,
-            database: self
-                .database
-                .ok_or(CoreError::BuilderIncomplete("database"))?,
             portfolio: self
                 .portfolio
                 .ok_or(CoreError::BuilderIncomplete("portfolio"))?,

@@ -1,8 +1,7 @@
 pub mod error;
 pub mod sqlite;
 
-use std::collections::HashMap;
-
+use self::{error::DatabaseError, sqlite::DB_POOL};
 use crate::{
     assets::Asset,
     portfolio::{
@@ -14,9 +13,8 @@ use crate::{
     },
 };
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 use uuid::Uuid;
-
-use self::{error::DatabaseError, sqlite::DB_POOL};
 
 pub struct Database {
     open_positions: HashMap<PositionId, Position>,
