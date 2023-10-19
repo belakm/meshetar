@@ -1,9 +1,12 @@
 pub mod error;
 
 use crate::{
-    assets::Asset, database::Database, portfolio::Portfolio, trading::Trader,
+    assets::{fetch_candles, Asset},
+    portfolio::Portfolio,
+    trading::Trader,
     utils::binance_client::BinanceClient,
 };
+use chrono::Duration;
 use error::CoreError;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{
@@ -39,6 +42,7 @@ impl Core {
 impl Core {
     pub async fn run(&mut self) {
         info!("Core {} is starting up.", &self.id);
+
         let mut trading_stopped = self.run_traders().await;
         loop {
             tokio::select! {
@@ -68,6 +72,25 @@ impl Core {
                 }
             }
         }
+    }
+    async fn fetch_history(&mut self) -> mpsc::Receiver<bool> {
+        let assets = self.traders.into_iter().map(|trader| &trader.asset);
+        let handles = assets
+            .into_iter()
+            .map(|asset| fetch_candles(Duration::days(3), asset.clone()));
+        let (notify_transmitter, notify_receiver) = mpsc::channel(1);
+        tokio::spawn(async move {
+            for handle in handles {
+                if let Err(err) = handle.await {
+                    error!(
+                        error = &*format!("{:?}", err),
+                        "Trader thread has panicked during execution",
+                    )
+                }
+            }
+            let _ = notify_transmitter.send(true).await;
+        });
+        notify_receiver
     }
     async fn run_traders(&mut self) -> mpsc::Receiver<bool> {
         let traders = std::mem::take(&mut self.traders);

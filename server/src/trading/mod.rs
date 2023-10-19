@@ -44,7 +44,7 @@ impl SignalForceExit {
 
 pub struct Trader {
     core_id: Uuid,
-    asset: Asset,
+    pub asset: Asset,
     command_reciever: mpsc::Receiver<Command>,
     event_transmitter: EventTx,
     event_queue: VecDeque<Event>,
@@ -71,7 +71,6 @@ impl Trader {
                     _ => continue,
                 }
             }
-
             match self.market_feed.next() {
                 Feed::Next(asset) => {
                     self.event_transmitter.send(Event::Market(asset.clone()));
@@ -88,7 +87,6 @@ impl Trader {
                 }
                 Feed::Finished => break,
             }
-
             while let Some(event) = self.event_queue.pop_front() {
                 match event {
                     Event::Market(market_event) => {
