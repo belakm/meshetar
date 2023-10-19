@@ -1,56 +1,65 @@
 use crate::{
     database::sqlite::DB_POOL,
-    utils::{binance_client::BINANCE_WSS_BASE_URL, serde_utils::f64_from_string},
+    utils::{
+        binance_client::BINANCE_WSS_BASE_URL, formatting::timestamp_to_dt,
+        serde_utils::f64_from_string,
+    },
 };
 use binance_spot_connector_rust::{
     market_stream::ticker::TickerStream, tokio_tungstenite::BinanceWebSocketClient,
 };
+use chrono::DateTime;
 use futures::{StreamExt, TryFutureExt};
 use serde::Deserialize;
+use tokio::sync::mpsc::{self, UnboundedReceiver};
+use tracing::{info, warn};
+
+use super::{error::AssetError, Asset, Candle, MarketEvent, MarketEventDetail};
 
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 pub struct TickerAsset {
     // e: String,          // Event type
-    // E: i64,             // Event time
+    #[serde(rename = "E")]
+    pub timestamp: i64, // Event time
     #[serde(rename = "s")]
-    symbol: String, // Symbol
+    pub symbol: String, // Symbol
     #[serde(rename = "p", deserialize_with = "f64_from_string")]
-    price_change: f64, // Price change
+    pub price_change: f64, // Price change
     #[serde(rename = "P", deserialize_with = "f64_from_string")]
-    price_change_percent: f64, // Price change percent
+    pub price_change_percent: f64, // Price change percent
     #[serde(rename = "w", deserialize_with = "f64_from_string")]
-    weighted_average_price: f64, // Weighted average price
+    pub weighted_average_price: f64, // Weighted average price
     #[serde(rename = "x", deserialize_with = "f64_from_string")]
-    first_price: f64, // First trade(F)-1 price (first trade before the 24hr rolling window)
+    pub first_price: f64, // First trade(F)-1 price (first trade before the 24hr rolling window)
     #[serde(rename = "c", deserialize_with = "f64_from_string")]
-    last_price: f64, // Last price
+    pub last_price: f64, // Last price
     #[serde(rename = "Q", deserialize_with = "f64_from_string")]
-    last_quantity: f64, // Last quantity
+    pub last_quantity: f64, // Last quantity
     #[serde(rename = "b", deserialize_with = "f64_from_string")]
-    best_bid_price: f64, // Best bid price
+    pub best_bid_price: f64, // Best bid price
     #[serde(rename = "B", deserialize_with = "f64_from_string")]
-    best_bid_quantity: f64, // Best bid quantity
+    pub best_bid_quantity: f64, // Best bid quantity
     #[serde(rename = "a", deserialize_with = "f64_from_string")]
-    best_ask_price: f64, // Best ask price
+    pub best_ask_price: f64, // Best ask price
     #[serde(rename = "A", deserialize_with = "f64_from_string")]
-    best_ask_quantity: f64, // Best ask quantity
+    pub best_ask_quantity: f64, // Best ask quantity
     #[serde(rename = "o", deserialize_with = "f64_from_string")]
-    open_price: f64, // Open price
+    pub open_price: f64, // Open price
     #[serde(rename = "h", deserialize_with = "f64_from_string")]
-    high_price: f64, // High price
+    pub high_price: f64, // High price
     #[serde(rename = "l", deserialize_with = "f64_from_string")]
-    low_price: f64, // Low price
+    pub low_price: f64, // Low price
     #[serde(rename = "v", deserialize_with = "f64_from_string")]
-    total_traded_base_volume: f64, // Total traded base asset volume
+    pub total_traded_base_volume: f64, // Total traded base asset volume
     #[serde(rename = "q", deserialize_with = "f64_from_string")]
-    total_traded_quote_volume: f64, // Total traded quote asset volume
+    pub total_traded_quote_volume: f64, // Total traded quote asset volume
     // O: 0,             // Statistics open time
     // C: 86400000,      // Statistics close time
     // F: 0,             // First trade ID
     // L: 18150,         // Last trade Id
     #[serde(rename = "n")]
-    number_of_trades: i64, // Total number of trades
+    pub number_of_trades: i64, // Total number of trades
 }
 
 pub async fn insert_assets(assets: Vec<TickerAsset>) -> Result<(), String> {
@@ -109,34 +118,45 @@ pub async fn insert_assets(assets: Vec<TickerAsset>) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn subscribe() -> Result<(), String> {
+pub async fn new_ticker(asset: Asset) -> Result<UnboundedReceiver<MarketEvent>, AssetError> {
+    let (tx, rx) = mpsc::unbounded_channel();
     let (mut conn, _) = BinanceWebSocketClient::connect_async(BINANCE_WSS_BASE_URL)
-        .await
-        .expect("Failed to connect");
+        .map_err(|e| AssetError::BinanceStreamError(e.to_string()))
+        .await?;
 
-    conn.subscribe(vec![&TickerStream::all_symbols().into()])
+    let subscription = conn
+        .subscribe(vec![&TickerStream::from_symbol(&asset.to_string()).into()])
         .await;
 
-    while let Some(message) = conn.as_mut().next().await {
-        match message {
-            Ok(message) => {
-                let data = message.into_data();
-                let string_data = String::from_utf8(data).expect("Found invalid UTF-8 chars");
-                let assets: Result<Vec<TickerAsset>, serde_json::Error> =
-                    serde_json::from_str(&string_data);
-                match assets {
-                    Ok(assets) => match insert_assets(assets).await {
-                        Err(e) => {
-                            log::error!("Error inserting new assets, {:?}", e);
-                        }
-                        _ => (),
-                    },
-                    Err(e) => log::warn!("Error parsing PRICE SOCKET: {:?}", e),
-                }
-            }
-            Err(e) => log::warn!("Error recieving on PRICE SOCKET: {:?}", e),
-        }
-    }
+    info!(
+        "Connected to string {} with message_id {}",
+        asset.to_string(),
+        subscription
+    );
 
-    Ok(())
+    tokio::spawn(async move {
+        while let Some(message) = conn.as_mut().next().await {
+            match message {
+                Ok(message) => {
+                    let data = message.into_data();
+                    let string_data = String::from_utf8(data).expect("Found invalid UTF-8 chars");
+                    let candle_parse: Result<TickerAsset, serde_json::Error> =
+                        serde_json::from_str(&string_data);
+                    match candle_parse {
+                        Ok(new_candle) => {
+                            tx.send(MarketEvent {
+                                time: timestamp_to_dt(new_candle.timestamp),
+                                asset: asset.clone(),
+                                detail: MarketEventDetail::Candle(Candle::from(&new_candle)),
+                            });
+                        }
+                        Err(e) => warn!("Error parsing asset feed event: {}", e),
+                    }
+                }
+                Err(e) => warn!("Error recieving on PRICE SOCKET: {:?}", e),
+            }
+        }
+    });
+
+    Ok(rx)
 }

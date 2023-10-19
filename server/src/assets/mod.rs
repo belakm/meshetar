@@ -1,12 +1,20 @@
 pub mod asset_ticker;
 pub mod book;
+pub mod error;
 pub mod routes;
-// pub mod technical_analysis;
 
+use binance_spot_connector_rust::{
+    market_stream::ticker::TickerStream, tokio_tungstenite::BinanceWebSocketClient,
+};
 use chrono::{DateTime, Utc};
+use futures::TryFutureExt;
 use serde::{Deserialize, Serialize};
 use strum::Display;
 use tokio::sync::mpsc;
+
+use crate::utils::{binance_client::BINANCE_WSS_BASE_URL, formatting::timestamp_to_dt};
+
+use self::{asset_ticker::TickerAsset, error::AssetError};
 
 #[derive(PartialEq, Display, Debug, Hash, Eq, Clone, Serialize, Deserialize, PartialOrd)]
 pub enum Asset {
@@ -51,7 +59,21 @@ pub struct Candle {
     pub low: f64,
     pub close: f64,
     pub volume: f64,
-    pub trade_count: u64,
+    pub trade_count: i64,
+}
+
+impl From<&TickerAsset> for Candle {
+    fn from(asset: &TickerAsset) -> Self {
+        Candle {
+            close_time: timestamp_to_dt(asset.timestamp),
+            open: asset.open_price,
+            high: asset.high_price,
+            low: asset.low_price,
+            close: asset.last_price,
+            volume: asset.total_traded_base_volume,
+            trade_count: asset.number_of_trades,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
@@ -102,8 +124,11 @@ impl MarketFeed {
             }
         }
     }
-    pub fn new(market_receiver: mpsc::UnboundedReceiver<MarketEvent>) -> Self {
-        Self { market_receiver }
+    pub async fn new(asset: Asset) -> Result<Self, AssetError> {
+        let receiver = asset_ticker::new_ticker(asset).await?;
+        Ok(Self {
+            market_receiver: receiver,
+        })
     }
 }
 

@@ -8,7 +8,7 @@ mod strategy;
 mod trading;
 mod utils;
 
-use assets::{Asset, Candle, MarketEvent, MarketEventDetail, MarketFeed};
+use assets::{error::AssetError, Asset, Candle, MarketEvent, MarketEventDetail, MarketFeed};
 use core::{error::CoreError, Command, Core};
 use database::{error::DatabaseError, Database};
 use env_logger::Builder;
@@ -49,6 +49,8 @@ enum MainError {
     Trader(#[from] TraderError),
     #[error("Binance client error: {0}")]
     BinanceClient(#[from] BinanceClientError),
+    #[error("Asset Feed error: {0}")]
+    Asset(#[from] AssetError),
     #[error("Rocket server error: {0}")]
     Rocket(#[from] RocketError),
 }
@@ -145,7 +147,7 @@ async fn run() -> Result<(), MainError> {
             .event_transmitter(event_transmitter)
             .portfolio(Arc::clone(&portfolio))
             .market_feed(MarketFeed {
-                market_receiver: stream_market_event_trades().await,
+                market_receiver: MarketFeed::new(Asset::BTCUSDT).await?.market_receiver,
             })
             .strategy(Strategy::new())
             .execution(Execution::new())
@@ -162,7 +164,7 @@ async fn run() -> Result<(), MainError> {
         .build()?;
 
     tokio::spawn(core_events_listener(event_receiver));
-    let _ = tokio::time::timeout(Duration::from_secs(5), core.run()).await;
+    let _ = tokio::time::timeout(Duration::from_secs(120), core.run()).await;
 
     // rocket::build()
     //     .attach(CORS)

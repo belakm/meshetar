@@ -10,7 +10,7 @@ use tokio::sync::{
     mpsc::{self, Receiver},
     Mutex,
 };
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 #[derive(PartialEq, Debug)]
@@ -38,6 +38,7 @@ impl Core {
 
 impl Core {
     pub async fn run(&mut self) {
+        info!("Core {} is starting up.", &self.id);
         let mut trading_stopped = self.run_traders().await;
         loop {
             tokio::select! {

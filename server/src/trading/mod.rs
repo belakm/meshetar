@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, sync::Arc};
 use strum::{Display, EnumString};
 use tokio::sync::{mpsc, Mutex};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use self::{error::TraderError, execution::Execution};
@@ -59,6 +59,7 @@ impl Trader {
         TraderBuilder::new()
     }
     pub async fn run(&mut self) -> Result<(), TraderError> {
+        info!("Trader {} starting up.", self.asset);
         loop {
             while let Some(command) = self.receive_remote_command() {
                 match command {
@@ -91,10 +92,13 @@ impl Trader {
             while let Some(event) = self.event_queue.pop_front() {
                 match event {
                     Event::Market(market_event) => {
-                        if let Ok(Some(signal)) = self.strategy.generate_signal(&market_event).await
-                        {
-                            self.event_transmitter.send(Event::Signal(signal.clone()));
-                            self.event_queue.push_back(Event::Signal(signal));
+                        match self.strategy.generate_signal(&market_event).await {
+                            Ok(Some(signal)) => {
+                                self.event_transmitter.send(Event::Signal(signal.clone()));
+                                self.event_queue.push_back(Event::Signal(signal));
+                            }
+                            Ok(None) => { /* No signal = do nothing*/ }
+                            Err(e) => warn!("{}", e),
                         }
                     }
                     Event::Signal(signal) => {
