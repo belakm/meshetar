@@ -4,7 +4,7 @@ use crate::{
     assets::{fetch_candles, Asset},
     portfolio::Portfolio,
     trading::Trader,
-    utils::binance_client::BinanceClient,
+    utils::binance_client::{self, BinanceClient},
 };
 use chrono::Duration;
 use error::CoreError;
@@ -27,7 +27,7 @@ pub enum Command {
 pub struct Core {
     id: Uuid,
     portfolio: Arc<Mutex<Portfolio>>,
-    binance_client: BinanceClient,
+    binance_client: Arc<BinanceClient>,
     command_reciever: Receiver<Command>,
     command_transmitters: HashMap<Asset, mpsc::Sender<Command>>,
     traders: Vec<Trader>,
@@ -42,7 +42,14 @@ impl Core {
 impl Core {
     pub async fn run(&mut self) {
         info!("Core {} is starting up.", &self.id);
-
+        let mut fetching_stopped = self.fetch_history().await;
+        loop {
+            tokio::select! {
+                _ = fetching_stopped.recv() => {
+                    break;
+                }
+            }
+        }
         let mut trading_stopped = self.run_traders().await;
         loop {
             tokio::select! {
@@ -74,10 +81,15 @@ impl Core {
         }
     }
     async fn fetch_history(&mut self) -> mpsc::Receiver<bool> {
-        let assets = self.traders.into_iter().map(|trader| &trader.asset);
-        let handles = assets
-            .into_iter()
-            .map(|asset| fetch_candles(Duration::days(3), asset.clone()));
+        let assets: Vec<Asset> = self
+            .traders
+            .iter()
+            .map(|trader| trader.asset.clone())
+            .collect();
+        let binance_client = self.binance_client.clone();
+        let handles = assets.into_iter().map(move |asset| {
+            fetch_candles(Duration::days(3), asset.clone(), binance_client.clone())
+        });
         let (notify_transmitter, notify_receiver) = mpsc::channel(1);
         tokio::spawn(async move {
             for handle in handles {
@@ -217,14 +229,16 @@ impl CoreBuilder {
         }
     }
     pub fn build(self) -> Result<Core, CoreError> {
+        let binance_client = self
+            .binance_client
+            .ok_or(CoreError::BuilderIncomplete("binance client"))?;
+        let binance_client = Arc::new(binance_client);
         let core = Core {
             id: self.id.ok_or(CoreError::BuilderIncomplete("core_id"))?,
             portfolio: self
                 .portfolio
                 .ok_or(CoreError::BuilderIncomplete("portfolio"))?,
-            binance_client: self
-                .binance_client
-                .ok_or(CoreError::BuilderIncomplete("binance client"))?,
+            binance_client,
             command_reciever: self
                 .command_reciever
                 .ok_or(CoreError::BuilderIncomplete("command reciever"))?,

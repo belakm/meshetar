@@ -2,11 +2,13 @@ pub mod asset_ticker;
 pub mod book;
 pub mod error;
 pub mod routes;
+use std::sync::Arc;
+
 use self::{asset_ticker::TickerAsset, error::AssetError};
 use crate::{
     database,
     utils::{
-        binance_client::BINANCE_CLIENT,
+        binance_client::{BinanceClient, BINANCE_CLIENT},
         formatting::{timestamp_to_dt, timestamp_to_string},
         serde_utils::f64_from_string,
     },
@@ -164,21 +166,24 @@ impl Default for MarketMeta {
     }
 }
 
-pub async fn fetch_candles(duration: Duration, asset: Asset) -> Result<Vec<Candle>, AssetError> {
+pub async fn fetch_candles(
+    duration: Duration,
+    asset: Asset,
+    binance_client: Arc<BinanceClient>,
+) -> Result<Vec<Candle>, AssetError> {
     let mut start_time: i64 = (Utc::now() - duration).timestamp_millis();
-    let client = BINANCE_CLIENT.get().unwrap();
-    info!("Fetching {} history.", asset);
+    info!("Fetching {} history, start: {}", asset, start_time);
     let mut candles = Vec::<Candle>::new();
     loop {
         tokio::select! {
             _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
-                info!("Loading candles from: {:?}", timestamp_to_string(start_time));
+                info!("Loading candles from: {:?}", start_time);
                 let request = binance_spot_connector_rust::market::klines(&asset.to_string(), KlineInterval::Minutes1)
                     .start_time(start_time as u64)
                     .limit(1000);
                 let klines;
                 {
-                    let data = client
+                    let data = binance_client.client
                         .send(request)
                         .map_err(|e| AssetError::BinanceClientError(format!("{:?}", e)))
                         .await?;
@@ -199,6 +204,7 @@ pub async fn fetch_candles(duration: Duration, asset: Asset) -> Result<Vec<Candl
             }
         }
     }
+    info!("Candles fetched: {}", candles.len());
     Ok(candles)
 }
 
