@@ -1,9 +1,7 @@
 use crate::{
-    model::prediction_model::TradeSignal,
-    utils::{
-        database::DB_POOL,
-        formatting::{dt_to_readable, timestamp_to_dt},
-    },
+    database::sqlite::DB_POOL,
+    strategy::prediction_model::TradeSignal,
+    utils::formatting::{dt_to_readable, timestamp_to_dt},
 };
 use chrono::{DateTime, Duration, Utc};
 use futures::TryFutureExt;

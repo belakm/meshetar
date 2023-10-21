@@ -1,34 +1,57 @@
-// Main modules
 mod assets;
-mod model;
+mod core;
+mod database;
+mod events;
 mod plotting;
+mod portfolio;
+mod strategy;
 mod trading;
 mod utils;
 
-use assets::{
-    asset_ticker,
-    routes::{clear_history, fetch_history, last_kline_time},
-};
+use assets::{Asset, Candle, MarketEvent, MarketEventDetail, MarketFeed};
+use core::{error::CoreError, Command, Core};
+use database::{error::DatabaseError, Database};
 use env_logger::Builder;
+use events::{core_events_listener, Event, EventTx};
 use log::LevelFilter;
-use model::routes::create_new_model;
-use plotting::routes::plot_chart;
-use rocket::catch;
-use rocket::fairing::{Fairing, Info, Kind};
-use rocket::fs::FileServer;
-use rocket::fs::Options;
-use rocket::futures::TryFutureExt;
-use rocket::http::Header;
-use rocket::http::Status;
-use rocket::{Request, Response};
-use std::sync::Arc;
-use tokio::sync::watch;
+use portfolio::{error::PortfolioError, Portfolio};
+use rocket::{
+    catch,
+    fairing::{Fairing, Info, Kind},
+    fs::FileServer,
+    fs::Options,
+    futures::TryFutureExt,
+    http::Header,
+    http::Status,
+    Error as RocketError, Request, Response,
+};
+use std::{collections::HashMap, sync::Arc, time::Duration};
+use strategy::Strategy;
+use thiserror::Error;
 use tokio::sync::Mutex;
-use trading::routes::{interval_put, meshetar_status, pair_put, run, stop_all_operations};
-use trading::{meshetar::Meshetar, portfolio, routes::balance_sheet};
-use utils::{binance_client, database};
+use tokio::sync::{mpsc, watch};
+use tracing::{debug, error, info};
+use trading::{error::TraderError, execution::Execution, Trader};
+use utils::binance_client::{self, BinanceClient, BinanceClientError};
+use uuid::Uuid;
 
 pub struct CORS;
+
+#[derive(Error, Debug)]
+enum MainError {
+    #[error("Portfolio error: {0}")]
+    Portfolio(#[from] PortfolioError),
+    #[error("Database error: {0}")]
+    Database(#[from] DatabaseError),
+    #[error("Core error: {0}")]
+    Core(#[from] CoreError),
+    #[error("Trader error: {0}")]
+    Trader(#[from] TraderError),
+    #[error("Binance client error: {0}")]
+    BinanceClient(#[from] BinanceClientError),
+    #[error("Rocket server error: {0}")]
+    Rocket(#[from] RocketError),
+}
 
 #[rocket::async_trait]
 impl Fairing for CORS {
@@ -82,67 +105,205 @@ pub struct TaskControl {
     receiver: watch::Receiver<bool>,
 }
 
+fn main() {
+    match run() {
+        Ok(_) => info!("Leaving Meshetar. See you soon! :)"),
+        Err(e) => error!("Whoops, error: {}", e),
+    }
+}
+
 #[rocket::main]
-async fn main() -> Result<(), String> {
+async fn run() -> Result<(), MainError> {
     // Sets logging for sqlx to warn and above, info logs are too verbose
     let mut builder = Builder::new();
     builder.filter(None, LevelFilter::Info); // a default for other libs
     builder.filter(Some("sqlx"), LevelFilter::Warn);
     builder.init();
 
-    binance_client::initialize().await?;
+    let core_id = Uuid::new_v4();
 
-    database::initialize().await?;
-    let meshetar = Arc::new(Mutex::new(Meshetar::new()));
-    let (sender, receiver) = watch::channel(false);
-    let task_control = Arc::new(Mutex::new(TaskControl { sender, receiver }));
+    let (event_transmitter, event_receiver) = mpsc::unbounded_channel();
+    let event_transmitter = EventTx::new(event_transmitter);
+    let portfolio: Arc<Mutex<Portfolio>> = Arc::new(Mutex::new(
+        Portfolio::builder()
+            .database(Database::new().map_err(MainError::from).await?)
+            .core_id(core_id.clone())
+            .build()
+            .map_err(MainError::from)?,
+    ));
 
-    // Hook to assets ticker
-    tokio::spawn(async {
-        match asset_ticker::subscribe().await {
-            _ => log::warn!("Price fetching ended."),
+    let mut traders = Vec::new();
+    let (command_transmitter, command_receiver) = mpsc::channel::<Command>(20);
+    let (trader_command_transmitter, trader_command_receiver) = mpsc::channel::<Command>(20);
+    let command_transmitters = HashMap::from([(Asset::BTCUSDT, trader_command_transmitter)]);
+
+    traders.push(
+        Trader::builder()
+            .core_id(core_id)
+            .asset(Asset::BTCUSDT)
+            .command_reciever(trader_command_receiver)
+            .event_transmitter(event_transmitter)
+            .portfolio(Arc::clone(&portfolio))
+            .market_feed(MarketFeed {
+                market_receiver: stream_market_event_trades().await,
+            })
+            .strategy(Strategy::new())
+            .execution(Execution::new())
+            .build()?,
+    );
+
+    let mut core = Core::builder()
+        .id(core_id)
+        .binance_client(BinanceClient::new().map_err(MainError::from).await?)
+        .portfolio(portfolio)
+        .command_reciever(command_receiver)
+        .command_transmitters(command_transmitters)
+        .traders(traders)
+        .build()?;
+
+    tokio::spawn(core_events_listener(event_receiver));
+    let _ = tokio::time::timeout(Duration::from_secs(5), core.run()).await;
+
+    // rocket::build()
+    //     .attach(CORS)
+    //     .mount(
+    //         "/",
+    //         routes![
+    //             all_options, // needed for Rocket to serve to browsers
+    //                          // create_new_model,
+    //                          // balance_sheet,
+    //                          // plot_chart,
+    //                          // meshetar_status,
+    //                          // interval_put,
+    //                          // stop_all_operations,
+    //                          // fetch_history,
+    //                          // clear_history,
+    //                          // last_kline_time,
+    //                          // run,
+    //                          // plot_chart,
+    //         ],
+    //     )
+    //     .mount("/", FileServer::new("static", Options::None).rank(1))
+    //     .register("/", catchers![internal_error, not_found, default])
+    //     .launch()
+    //     .map_err(MainError::from)
+    //     .await?;
+
+    Ok(())
+}
+
+/// TESTING
+///
+///
+async fn stream_market_event_trades() -> mpsc::UnboundedReceiver<MarketEvent> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        let mut candles = load_json_market_event_candles().into_iter();
+        while let Some(event) = candles.next() {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            tx.send(event);
         }
     });
+    rx
+}
 
-    // Periodically get account status
-    tokio::spawn(async {
-        loop {
-            match portfolio::fetch_account_data().await {
-                Err(e) => log::warn!("Error fetching balance: {:?}", e),
-                _ => (),
+fn load_json_market_event_candles() -> Vec<MarketEvent> {
+    let candles = r#"[
+  {
+    "start_time": "2022-04-05 20:00:00.000000000 UTC",
+    "close_time": "2022-04-05 21:00:00.000000000 UTC",
+    "open": 1000.0,
+    "high": 1100.0,
+    "low": 900.0,
+    "close": 1050.0,
+    "volume": 1000000000.0,
+    "trade_count": 100
+  },
+  {
+    "start_time": "2022-04-05 21:00:00.000000000 UTC",
+    "close_time": "2022-04-05 22:00:00.000000000 UTC",
+    "open": 1050.0,
+    "high": 1100.0,
+    "low": 800.0,
+    "close": 1060.0,
+    "volume": 1000000000.0,
+    "trade_count": 50
+  },
+  {
+    "start_time": "2022-04-05 22:00:00.000000000 UTC",
+    "close_time": "2022-04-05 23:00:00.000000000 UTC",
+    "open": 1060.0,
+    "high": 1200.0,
+    "low": 800.0,
+    "close": 1200.0,
+    "volume": 1000000000.0,
+    "trade_count": 200
+  },
+  {
+    "start_time": "2022-04-05 23:00:00.000000000 UTC",
+    "close_time": "2022-04-06 00:00:00.000000000 UTC",
+    "open": 1200.0,
+    "high": 1200.0,
+    "low": 1100.0,
+    "close": 1300.0,
+    "volume": 1000000000.0,
+    "trade_count": 500
+  }
+]"#;
+
+    let candles =
+        serde_json::from_str::<Vec<Candle>>(&candles).expect("failed to parse candles String");
+
+    candles
+        .into_iter()
+        .map(|candle| MarketEvent {
+            time: candle.close_time,
+            asset: Asset::BTCUSDT,
+            detail: MarketEventDetail::Candle(candle),
+        })
+        .collect()
+}
+
+// Listen to Events that occur in the Engine. These can be used for updating event-sourcing,
+// updating dashboard, etc etc.
+async fn listen_to_engine_events(mut event_rx: mpsc::UnboundedReceiver<Event>) {
+    while let Some(event) = event_rx.recv().await {
+        debug!("EVENT: {:?}\n", &event);
+        match event {
+            Event::Market(_) => {
+                // Market Event occurred in Engine
             }
-            std::thread::sleep(std::time::Duration::from_millis(5000));
+            Event::Signal(signal) => {
+                // Signal Event occurred in Engine
+                println!("{signal:?}");
+            }
+            Event::SignalForceExit(_) => {
+                // SignalForceExit Event occurred in Engine
+            }
+            Event::Order(new_order) => {
+                // OrderNew Event occurred in Engine
+                println!("{new_order:?}");
+            }
+            Event::Fill(fill_event) => {
+                // Fill Event occurred in Engine
+                println!("{fill_event:?}");
+            }
+            Event::PositionNew(new_position) => {
+                // PositionNew Event occurred in Engine
+                println!("{new_position:?}");
+            }
+            Event::PositionUpdate(updated_position) => {
+                // PositionUpdate Event occurred in Engine
+                println!("{updated_position:?}");
+            }
+            Event::PositionExit(exited_position) => {
+                // PositionExit Event occurred in Engine
+                println!("{exited_position:?}");
+            }
+            Event::Balance(balance_update) => {
+                // Balance update Event occurred in Engine
+                println!("{balance_update:?}");
+            }
         }
-    });
-
-    match rocket::build()
-        .attach(CORS)
-        .manage(meshetar)
-        .manage(task_control)
-        .mount(
-            "/",
-            routes![
-                all_options,
-                meshetar_status,
-                stop_all_operations,
-                fetch_history,
-                clear_history,
-                interval_put,
-                pair_put,
-                last_kline_time,
-                run,
-                create_new_model,
-                plot_chart,
-                balance_sheet
-            ],
-        )
-        .mount("/", FileServer::new("static", Options::None).rank(1))
-        .register("/", catchers![internal_error, not_found, default])
-        .launch()
-        .map_err(|e| e.to_string())
-        .await
-    {
-        Ok(_) => Ok(()),
-        Err(e) => Err(e),
     }
 }

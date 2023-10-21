@@ -1,7 +1,7 @@
 use crate::{
     binance_client::{BINANCE_CLIENT, BINANCE_WSS_BASE_URL},
-    database::DB_POOL,
-    model::prediction_model::{self, TradeSignal},
+    database::sqlite::DB_POOL,
+    strategy::prediction_model::{self, TradeSignal},
     trading::meshetar::Meshetar,
     utils::formatting::timestamp_to_string,
     TaskControl,
