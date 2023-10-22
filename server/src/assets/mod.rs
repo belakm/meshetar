@@ -4,7 +4,7 @@ pub mod error;
 pub mod routes;
 use std::sync::Arc;
 
-use self::{asset_ticker::TickerAsset, error::AssetError};
+use self::{asset_ticker::KlineEvent, error::AssetError};
 use crate::{
     database,
     utils::{
@@ -58,6 +58,7 @@ pub struct Liquidation {
 
 #[derive(Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
 pub struct Candle {
+    pub open_time: DateTime<Utc>,
     pub close_time: DateTime<Utc>,
     pub open: f64,
     pub high: f64,
@@ -67,16 +68,17 @@ pub struct Candle {
     pub trade_count: i64,
 }
 
-impl From<&TickerAsset> for Candle {
-    fn from(asset: &TickerAsset) -> Self {
+impl From<&KlineEvent> for Candle {
+    fn from(kline: &KlineEvent) -> Self {
         Candle {
-            close_time: timestamp_to_dt(asset.timestamp),
-            open: asset.open_price,
-            high: asset.high_price,
-            low: asset.low_price,
-            close: asset.last_price,
-            volume: asset.total_traded_base_volume,
-            trade_count: asset.number_of_trades,
+            open_time: timestamp_to_dt(kline.detail.open_time),
+            close_time: timestamp_to_dt(kline.detail.close_time),
+            open: kline.detail.open_price,
+            high: kline.detail.high_price,
+            low: kline.detail.low_price,
+            close: kline.detail.close_price,
+            volume: kline.detail.base_volume,
+            trade_count: kline.detail.trade_count,
         }
     }
 }
@@ -84,6 +86,7 @@ impl From<&TickerAsset> for Candle {
 impl From<&BinanceKline> for Candle {
     fn from(kline: &BinanceKline) -> Self {
         Candle {
+            open_time: timestamp_to_dt(kline.0),
             close_time: timestamp_to_dt(kline.6),
             open: kline.1.parse().unwrap(),
             high: kline.2.parse().unwrap(),

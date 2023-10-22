@@ -3,7 +3,7 @@ pub mod sqlite;
 
 use self::{error::DatabaseError, sqlite::DB_POOL};
 use crate::{
-    assets::Asset,
+    assets::{Asset, Candle},
     portfolio::{
         account::Account,
         balance::{
@@ -240,6 +240,36 @@ impl Database {
             .get(&determine_exited_positions_id(engine_id))
             .map(Vec::clone)
             .unwrap_or_else(Vec::new))
+    }
+
+    pub async fn add_candles(
+        &mut self,
+        asset: Asset,
+        candles: Vec<Candle>,
+    ) -> Result<(), DatabaseError> {
+        let connection = DB_POOL.get().unwrap();
+        let mut tx = connection.begin().await?;
+        for candle in candles {
+            sqlx::query(
+                r#"
+                INSERT OR REPLACE INTO candles(asset, open_time, open, high, low, close, close_time, volume, trades)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                "#,
+            )
+            .bind(asset.to_string())
+            .bind(candle.open_time)
+            .bind(candle.open)
+            .bind(candle.high)
+            .bind(candle.low)
+            .bind(candle.close)
+            .bind(candle.close_time)
+            .bind(candle.volume)
+            .bind(candle.trade_count)
+            .execute(tx.as_mut())
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
     }
 }
 
