@@ -2,6 +2,7 @@ pub mod error;
 
 use crate::{
     assets::{fetch_candles, Asset},
+    database::Database,
     portfolio::Portfolio,
     trading::Trader,
     utils::binance_client::{self, BinanceClient},
@@ -26,6 +27,7 @@ pub enum Command {
 
 pub struct Core {
     id: Uuid,
+    database: Arc<Mutex<Database>>,
     portfolio: Arc<Mutex<Portfolio>>,
     binance_client: Arc<BinanceClient>,
     command_reciever: Receiver<Command>,
@@ -88,16 +90,25 @@ impl Core {
             .collect();
         let binance_client = self.binance_client.clone();
         let handles = assets.into_iter().map(move |asset| {
-            fetch_candles(Duration::days(3), asset.clone(), binance_client.clone())
+            (
+                asset.clone(),
+                fetch_candles(Duration::days(3), asset.clone(), binance_client.clone()),
+            )
         });
         let (notify_transmitter, notify_receiver) = mpsc::channel(1);
+        let mut database = self.database.clone();
         tokio::spawn(async move {
             for handle in handles {
-                if let Err(err) = handle.await {
-                    error!(
-                        error = &*format!("{:?}", err),
-                        "Trader thread has panicked during execution",
-                    )
+                match handle.1.await {
+                    Ok(candles) => {
+                        database.lock().await.add_candles(handle.0, candles).await;
+                    }
+                    Err(err) => {
+                        error!(
+                            error = &*format!("{:?}", err),
+                            "Trader thread has panicked during execution",
+                        )
+                    }
                 }
             }
             let _ = notify_transmitter.send(true).await;
@@ -175,6 +186,7 @@ impl Core {
 pub struct CoreBuilder {
     id: Option<Uuid>,
     portfolio: Option<Arc<Mutex<Portfolio>>>,
+    database: Option<Arc<Mutex<Database>>>,
     binance_client: Option<BinanceClient>,
     command_reciever: Option<Receiver<Command>>,
     command_transmitters: Option<HashMap<Asset, mpsc::Sender<Command>>>,
@@ -185,6 +197,7 @@ impl CoreBuilder {
     pub fn new() -> Self {
         CoreBuilder {
             id: None,
+            database: None,
             portfolio: None,
             binance_client: None,
             command_reciever: None,
@@ -222,6 +235,12 @@ impl CoreBuilder {
             ..self
         }
     }
+    pub fn database(self, value: Arc<Mutex<Database>>) -> Self {
+        CoreBuilder {
+            database: Some(value),
+            ..self
+        }
+    }
     pub fn traders(self, value: Vec<Trader>) -> Self {
         CoreBuilder {
             traders: Some(value),
@@ -235,6 +254,9 @@ impl CoreBuilder {
         let binance_client = Arc::new(binance_client);
         let core = Core {
             id: self.id.ok_or(CoreError::BuilderIncomplete("core_id"))?,
+            database: self
+                .database
+                .ok_or(CoreError::BuilderIncomplete("database"))?,
             portfolio: self
                 .portfolio
                 .ok_or(CoreError::BuilderIncomplete("portfolio"))?,

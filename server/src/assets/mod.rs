@@ -199,7 +199,7 @@ pub async fn fetch_candles(
                 let new_candles = parse_binance_klines(&klines).await?;
                 let last_candle = &new_candles.last();
                 if let Some(last_candle) = last_candle {
-                    start_time = last_candle.close_time.timestamp_micros();
+                    start_time = last_candle.close_time.timestamp_millis();
                     candles.extend(new_candles);// .concat(new_candles);
                 } else {
                     break

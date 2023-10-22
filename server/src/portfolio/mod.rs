@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::{
@@ -35,7 +38,7 @@ pub struct OrderEvent {
 }
 
 pub struct Portfolio {
-    database: Database,
+    database: Arc<Mutex<Database>>,
     core_id: Uuid,
 }
 
@@ -60,10 +63,11 @@ impl Portfolio {
         fill: &FillEvent,
     ) -> Result<Vec<Event>, PortfolioError> {
         let mut generated_events: Vec<Event> = Vec::with_capacity(2);
-        let mut balance = self.database.get_balance(self.core_id)?;
+        let mut database = self.database.lock().await;
+        let mut balance = database.get_balance(self.core_id)?;
         let position_id = determine_position_id(self.core_id, &fill.asset);
 
-        match self.database.remove_position(&position_id)? {
+        match database.remove_position(&position_id)? {
             Some(mut position) => {
                 let position_exit = position.exit(balance, fill)?;
                 generated_events.push(Event::PositionExit(position_exit));
@@ -71,23 +75,23 @@ impl Portfolio {
                     + position.realised_profit_loss
                     + position.enter_fees_total;
                 balance.total += position.realised_profit_loss;
-                self.database.set_exited_position(self.core_id, position)?;
+                database.set_exited_position(self.core_id, position)?;
             }
             None => {
                 let position = Position::enter(self.core_id, fill)?;
                 generated_events.push(Event::PositionNew(position.clone()));
                 balance.available += -position.enter_value_gross - position.enter_fees_total;
-                self.database.set_open_position(position)?;
+                database.set_open_position(position)?;
             }
         };
         generated_events.push(Event::Balance(balance));
-        self.database.set_balance(self.core_id, balance)?;
+        database.set_balance(self.core_id, balance)?;
         Ok(generated_events)
     }
 }
 
 pub struct PortfolioBuilder {
-    database: Option<Database>,
+    database: Option<Arc<Mutex<Database>>>,
     core_id: Option<Uuid>,
 }
 
@@ -98,7 +102,7 @@ impl PortfolioBuilder {
             core_id: None,
         }
     }
-    pub fn database(self, database: Database) -> Self {
+    pub fn database(self, database: Arc<Mutex<Database>>) -> Self {
         Self {
             database: Some(database),
             ..self

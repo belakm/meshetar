@@ -8,18 +8,16 @@ mod strategy;
 mod trading;
 mod utils;
 
-use assets::{error::AssetError, Asset, Candle, MarketEvent, MarketEventDetail, MarketFeed};
+use assets::{error::AssetError, Asset, MarketFeed};
 use core::{error::CoreError, Command, Core};
 use database::{error::DatabaseError, Database};
 use env_logger::Builder;
-use events::{core_events_listener, Event, EventTx};
+use events::{core_events_listener, EventTx};
 use log::LevelFilter;
 use portfolio::{error::PortfolioError, Portfolio};
 use rocket::{
     catch,
     fairing::{Fairing, Info, Kind},
-    fs::FileServer,
-    fs::Options,
     futures::TryFutureExt,
     http::Header,
     http::Status,
@@ -30,7 +28,7 @@ use strategy::Strategy;
 use thiserror::Error;
 use tokio::sync::Mutex;
 use tokio::sync::{mpsc, watch};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use trading::{error::TraderError, execution::Execution, Trader};
 use utils::binance_client::{self, BinanceClient, BinanceClientError};
 use uuid::Uuid;
@@ -121,14 +119,14 @@ async fn run() -> Result<(), MainError> {
     builder.filter(None, LevelFilter::Info); // a default for other libs
     builder.filter(Some("sqlx"), LevelFilter::Warn);
     builder.init();
-
     let core_id = Uuid::new_v4();
-
     let (event_transmitter, event_receiver) = mpsc::unbounded_channel();
     let event_transmitter = EventTx::new(event_transmitter);
+    let database: Arc<Mutex<Database>> =
+        Arc::new(Mutex::new(Database::new().map_err(MainError::from).await?));
     let portfolio: Arc<Mutex<Portfolio>> = Arc::new(Mutex::new(
         Portfolio::builder()
-            .database(Database::new().map_err(MainError::from).await?)
+            .database(database.clone())
             .core_id(core_id.clone())
             .build()
             .map_err(MainError::from)?,
@@ -161,6 +159,7 @@ async fn run() -> Result<(), MainError> {
         .command_reciever(command_receiver)
         .command_transmitters(command_transmitters)
         .traders(traders)
+        .database(database)
         .build()?;
 
     tokio::spawn(core_events_listener(event_receiver));
