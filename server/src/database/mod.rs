@@ -249,6 +249,7 @@ impl Database {
     ) -> Result<(), DatabaseError> {
         let connection = DB_POOL.get().unwrap();
         let mut tx = connection.begin().await?;
+        info!("{}", &candles.last().unwrap().open_time);
         for candle in candles {
             sqlx::query(
                 r#"

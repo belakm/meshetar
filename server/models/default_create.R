@@ -6,19 +6,31 @@ suppressMessages(
 conn <- DBI::dbConnect(RSQLite::SQLite(), "database.sqlite")
 
 # Query the klines table and retrieve the historical data
-query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
+# query <- "SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
+#                  high, 
+#                  low, 
+#                  close, 
+#                  volume
+#           FROM candles 
+#           WHERE asset = 'BTCUSDT'
+#           ORDER BY open_time ASC;"
+
+query <- "SELECT strftime('%s', open_time) AS open_time,
                  high, 
                  low, 
                  close, 
                  volume
-          FROM klines
-          WHERE symbol = 'BTCUSDT'
+          FROM candles 
+          WHERE asset = 'BTCUSDT'
           ORDER BY open_time ASC;"
+
 data <- DBI::dbGetQuery(conn, query)
+
+print(data)
 
 # Disconnect from the database
 DBI::dbDisconnect(conn)
-
+data$open_time <- as.POSIXct(as.numeric(data$open_time), origin="1970-01-01", tz="UTC")
 rownames(data) <- as.POSIXct(data$open_time)
 
 # Exclude any rows that contain NA, NaN, or Inf values

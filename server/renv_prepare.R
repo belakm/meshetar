@@ -11,7 +11,8 @@ install.packages("keras")
   # install_keras(method = c("auto", "virtualenv", "conda"),
   #  conda = "auto", tensorflow = "default",
   #   extra_packages = c("tensorflow-hub"))
-keras::install_keras()
+library(keras)
+use_virtualenv("./keras_tf_env", required = TRUE)
 
 # if you wish to enjoy your GPU, you are welcomed to change the configuration and specify tensorflow = “gpu”.
 
