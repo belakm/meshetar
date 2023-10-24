@@ -18,10 +18,9 @@ pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 50)
 
 # %%
-import os
-print(os.path.abspath('./server/database.sqlite'))
 conn = sqlite3.connect('./server/database.sqlite')
-# cursor = sqliteConnection.cursor()
+# %%
+# conn = sqlite3.connect('database.sqlite')
 query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
                  high, 
                  low, 
@@ -30,8 +29,9 @@ query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
           FROM klines
           WHERE symbol = 'BTCUSDT';"""
 klines = pd.read_sql_query(query, conn)
-# %%
-
+klines['open_time'] = pd.to_datetime(klines['open_time'])
+klines.loc[:, klines.columns.difference(['open_time'])] = klines.loc[:, klines.columns.difference(['open_time'])].apply(pd.to_numeric, errors='coerce')
+#%%
 klines = add_all_ta_features(klines,
                              open = "open", 
                              close = "close",
@@ -40,8 +40,9 @@ klines = add_all_ta_features(klines,
                              high = "high",
                              fillna=True).dropna()
 # %%
-peaks, _ = find_peaks(klines["close"], distance = 50)
-valleys, _ = find_peaks(-klines["close"], distance  = 50)
+peaks, _ = find_peaks(klines["close"], distance = 12)
+klines["close"] = klines["close"].astype(float)
+valleys, _ = find_peaks(-klines["close"], distance  = 12)
 # plt.plot( klines["close"])
 # plt.plot(peaks, klines["close"][peaks], "x", color = "green")
 # plt.plot(valleys, klines["close"][valleys], "+", color = "red")

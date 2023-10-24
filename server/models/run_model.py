@@ -5,7 +5,7 @@ from ta import add_all_ta_features
 
 
 # Load the saved model
-loaded_model = tf.keras.models.load_model("server/models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
+loaded_model = tf.keras.models.load_model("server/models/neural_net_model")  
 
 conn = sqlite3.connect('./server/database.sqlite')
 # cursor = sqliteConnection.cursor()
@@ -19,6 +19,9 @@ query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
           ORDER BY open_time DESC
           LIMIT 50;"""
 klines = pd.read_sql_query(query, conn)
+klines['open_time'] = pd.to_datetime(klines['open_time'])
+klines.loc[:, klines.columns.difference(['open_time'])] = klines.loc[:, klines.columns.difference(['open_time'])].apply(pd.to_numeric, errors='coerce')
+
 # Make predictions using the loaded model
 
 klines = add_all_ta_features(klines,
@@ -30,13 +33,14 @@ klines = add_all_ta_features(klines,
                              fillna=True).dropna()
 predictions = loaded_model.predict(klines[klines.columns[~klines.columns.isin(['open_time', 'open','close', 'low', 'high', 'volume', 'signal'])]].astype('float32'))
 
+
 predicted_classes = tf.argmax(predictions, axis=1)  # For a classification model
 def set_model_prediction(row):
     if row == 1:
-        return "buy"
-    elif row == -1:
+        return "hold"
+    elif row == 0:
         return "sell"
     else:
-        return "hold"
+        return "buy"
 
 print(set_model_prediction(predicted_classes[-1]))
