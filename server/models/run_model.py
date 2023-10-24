@@ -5,17 +5,17 @@ from ta import add_all_ta_features
 
 
 # Load the saved model
-loaded_model = tf.keras.models.load_model("server/models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
+loaded_model = tf.keras.models.load_model("./models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
 
-conn = sqlite3.connect('./server/database.sqlite')
+conn = sqlite3.connect('./database.sqlite')
 # cursor = sqliteConnection.cursor()
 query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
                  high, 
                  low, 
                  close, 
                  volume
-          FROM klines
-          WHERE symbol = 'BTCUSDT'
+          FROM candles
+          WHERE asset = 'BTCUSDT'
           ORDER BY open_time DESC
           LIMIT 50;"""
 klines = pd.read_sql_query(query, conn)
