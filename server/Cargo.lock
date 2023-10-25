@@ -464,6 +464,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cpython"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3052106c29da7390237bc2310c1928335733b286287754ea85e6093d2495280e"
+dependencies = [
+ "libc",
+ "num-traits",
+ "paste",
+ "python3-sys",
+]
+
+[[package]]
 name = "crc"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1500,6 +1512,7 @@ version = "0.3.0"
 dependencies = [
  "binance_spot_connector_rust",
  "chrono",
+ "cpython",
  "env_logger",
  "futures",
  "hyper",
@@ -2070,6 +2083,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "python3-sys"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49f8b50d72fb3015735aa403eebf19bbd72c093bfeeae24ee798be5f2f1aab52"
+dependencies = [
+ "libc",
+ "regex",
 ]
 
 [[package]]

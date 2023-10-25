@@ -92,7 +92,7 @@ impl Core {
         let handles = assets.into_iter().map(move |asset| {
             (
                 asset.clone(),
-                fetch_candles(Duration::days(3), asset.clone(), binance_client.clone()),
+                fetch_candles(Duration::days(1), asset.clone(), binance_client.clone()),
             )
         });
         let (notify_transmitter, notify_receiver) = mpsc::channel(1);

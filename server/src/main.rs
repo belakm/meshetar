@@ -23,7 +23,7 @@ use rocket::{
     http::Status,
     Error as RocketError, Request, Response,
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, env, sync::Arc, time::Duration};
 use strategy::Strategy;
 use thiserror::Error;
 use tokio::sync::Mutex;
@@ -114,7 +114,7 @@ fn main() {
 
 #[rocket::main]
 async fn run() -> Result<(), MainError> {
-    // Sets logging for sqlx to warn and above, info logs are too verbose
+    // Point PYTHONHOME to the virtual environment directory
     let mut builder = Builder::new();
     builder.filter(None, LevelFilter::Info); // a default for other libs
     builder.filter(Some("sqlx"), LevelFilter::Warn);
@@ -147,7 +147,7 @@ async fn run() -> Result<(), MainError> {
             .market_feed(MarketFeed {
                 market_receiver: MarketFeed::new(Asset::BTCUSDT).await?.market_receiver,
             })
-            .strategy(Strategy::new())
+            .strategy(Strategy::new(Asset::BTCUSDT))
             .execution(Execution::new())
             .build()?,
     );
