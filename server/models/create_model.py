@@ -18,16 +18,17 @@ pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 50)
 
 # %%
-conn = sqlite3.connect('./server/database.sqlite')
-# %%
-# conn = sqlite3.connect('database.sqlite')
+import os
+print(os.path.abspath('./database.sqlite'))
+conn = sqlite3.connect('./database.sqlite')
+# cursor = sqliteConnection.cursor()
 query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
                  high, 
                  low, 
                  close, 
                  volume
-          FROM klines
-          WHERE symbol = 'BTCUSDT';"""
+          FROM candles 
+          WHERE asset = 'BTCUSDT';"""
 klines = pd.read_sql_query(query, conn)
 klines['open_time'] = pd.to_datetime(klines['open_time'])
 klines.loc[:, klines.columns.difference(['open_time'])] = klines.loc[:, klines.columns.difference(['open_time'])].apply(pd.to_numeric, errors='coerce')
@@ -158,4 +159,4 @@ plt.ylabel('Actual Target')
 plt.title('Confusion Matrix test')
 plt.show()
 
-model.save("/server/models/neural_net_model")
+model.save("./models/neural_net_model")

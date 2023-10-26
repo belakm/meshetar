@@ -16,7 +16,7 @@ pub fn timestamp_to_string(millis: i64) -> String {
 
 pub fn timestamp_to_dt(timestamp: i64) -> DateTime<Utc> {
     DateTime::<Utc>::from_utc(
-        NaiveDateTime::from_timestamp_opt(timestamp, 0).unwrap(),
+        NaiveDateTime::from_timestamp_millis(timestamp).unwrap(),
         Utc,
     )
 }

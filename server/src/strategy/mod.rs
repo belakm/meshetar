@@ -1,10 +1,11 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-
-use crate::assets::{Asset, MarketEvent};
+extern crate cpython;
 
 use self::error::StrategyError;
+use crate::assets::{Asset, MarketEvent};
+use chrono::{DateTime, Utc};
+use cpython::{NoArgs, PyModule, PyResult, Python};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 pub mod error;
 pub mod prediction_model;
@@ -49,16 +50,58 @@ impl Decision {
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
 pub struct SignalStrength(pub f64);
 
-pub struct Strategy {}
+pub struct Strategy {
+    asset: Asset,
+}
 impl Strategy {
-    pub fn new() -> Self {
-        Strategy {}
+    pub fn new(asset: Asset) -> Self {
+        Strategy { asset }
     }
     pub async fn generate_signal(
         &mut self,
         _market_event: &MarketEvent,
     ) -> Result<Option<Signal>, StrategyError> {
         // Run model
-        Err(StrategyError::NoSignalProduced)
+        let pyscript = include_str!("../../models/run_model.py");
+        let model_output = run_python_script(pyscript)?;
+        let signals = generate_signals_map(&model_output);
+        if signals.len() == 0 {
+            return Ok(None);
+        }
+        let time = Utc::now();
+        let signal = Signal {
+            time,
+            asset: self.asset.clone(),
+            signals,
+        };
+        Ok(Some(signal))
     }
+}
+
+fn generate_signals_map(model_output: &str) -> HashMap<Decision, SignalStrength> {
+    let mut signals = HashMap::with_capacity(4);
+    match model_output {
+        "buy" => {
+            signals.insert(Decision::Short, SignalStrength(1.0));
+            signals.insert(Decision::CloseLong, SignalStrength(1.0));
+        }
+        "sell" => {
+            signals.insert(Decision::Long, SignalStrength(1.0));
+            signals.insert(Decision::CloseShort, SignalStrength(1.0));
+        }
+        _ => (),
+    };
+    signals
+}
+
+fn run_python_script(script: &str) -> PyResult<String> {
+    let gil = Python::acquire_gil();
+    let py = gil.python();
+
+    let main_module = PyModule::import(py, "__main__")?;
+    py.run(script, Some(&main_module.dict(py)), None)?;
+
+    let output: String = main_module.call(py, "run", NoArgs, None)?.extract(py)?;
+    info!("{}", output);
+    Ok(output)
 }

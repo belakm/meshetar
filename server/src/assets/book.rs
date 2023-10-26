@@ -174,7 +174,7 @@ async fn insert_klines_to_database(klines: Vec<Kline>) -> Result<(), String> {
     for kline in klines {
         sqlx::query(
             r#"
-            INSERT OR REPLACE INTO klines (symbol, interval, open_time, open, high, low, close, volume, close_time, quote_asset_volume, number_of_trades, taker_buy_base_asset_volume, taker_buy_quote_asset_volume)
+            INSERT OR REPLACE INTO candles(symbol, interval, open_time, open, high, low, close, volume, close_time, quote_asset_volume, number_of_trades, taker_buy_base_asset_volume, taker_buy_quote_asset_volume)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
             "#,
         )

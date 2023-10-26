@@ -61,21 +61,17 @@ pub async fn setup_tables() -> Result<(), DatabaseError> {
             btc_valuation REAL NOT NULL,
             busd_valuation REAL NOT NULL
         );
-        CREATE TABLE IF NOT EXISTS klines (
-            symbol TEXT NOT NULL,
-            interval TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS candles (
+            asset TEXT NOT NULL,
             open_time INTEGER NOT NULL, 
             open REAL NOT NULL, 
             high REAL NOT NULL,
             low REAL NOT NULL, 
             close REAL NOT NULL, 
-            volume REAL NOT NULL, 
             close_time INTEGER NOT NULL, 
-            quote_asset_volume REAL NOT NULL, 
-            number_of_trades INTEGER NOT NULL,
-            taker_buy_base_asset_volume REAL NOT NULL, 
-            taker_buy_quote_asset_volume REAL NOT NULL,
-            PRIMARY KEY (open_time, symbol, interval)
+            volume REAL NOT NULL, 
+            trades INTEGER NOT NULL,
+            PRIMARY KEY (open_time, asset)
         );
         CREATE TABLE IF NOT EXISTS indicators (
             symbol TEXT NOT NULL,

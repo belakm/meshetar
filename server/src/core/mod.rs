@@ -1,16 +1,20 @@
 pub mod error;
 
 use crate::{
-    assets::Asset, database::Database, portfolio::Portfolio, trading::Trader,
-    utils::binance_client::BinanceClient,
+    assets::{fetch_candles, Asset},
+    database::Database,
+    portfolio::Portfolio,
+    trading::Trader,
+    utils::binance_client::{self, BinanceClient},
 };
+use chrono::Duration;
 use error::CoreError;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{
     mpsc::{self, Receiver},
     Mutex,
 };
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 #[derive(PartialEq, Debug)]
@@ -23,8 +27,9 @@ pub enum Command {
 
 pub struct Core {
     id: Uuid,
+    database: Arc<Mutex<Database>>,
     portfolio: Arc<Mutex<Portfolio>>,
-    binance_client: BinanceClient,
+    binance_client: Arc<BinanceClient>,
     command_reciever: Receiver<Command>,
     command_transmitters: HashMap<Asset, mpsc::Sender<Command>>,
     traders: Vec<Trader>,
@@ -38,6 +43,15 @@ impl Core {
 
 impl Core {
     pub async fn run(&mut self) {
+        info!("Core {} is starting up.", &self.id);
+        let mut fetching_stopped = self.fetch_history().await;
+        loop {
+            tokio::select! {
+                _ = fetching_stopped.recv() => {
+                    break;
+                }
+            }
+        }
         let mut trading_stopped = self.run_traders().await;
         loop {
             tokio::select! {
@@ -67,6 +81,39 @@ impl Core {
                 }
             }
         }
+    }
+    async fn fetch_history(&mut self) -> mpsc::Receiver<bool> {
+        let assets: Vec<Asset> = self
+            .traders
+            .iter()
+            .map(|trader| trader.asset.clone())
+            .collect();
+        let binance_client = self.binance_client.clone();
+        let handles = assets.into_iter().map(move |asset| {
+            (
+                asset.clone(),
+                fetch_candles(Duration::days(1), asset.clone(), binance_client.clone()),
+            )
+        });
+        let (notify_transmitter, notify_receiver) = mpsc::channel(1);
+        let mut database = self.database.clone();
+        tokio::spawn(async move {
+            for handle in handles {
+                match handle.1.await {
+                    Ok(candles) => {
+                        database.lock().await.add_candles(handle.0, candles).await;
+                    }
+                    Err(err) => {
+                        error!(
+                            error = &*format!("{:?}", err),
+                            "Trader thread has panicked during execution",
+                        )
+                    }
+                }
+            }
+            let _ = notify_transmitter.send(true).await;
+        });
+        notify_receiver
     }
     async fn run_traders(&mut self) -> mpsc::Receiver<bool> {
         let traders = std::mem::take(&mut self.traders);
@@ -139,6 +186,7 @@ impl Core {
 pub struct CoreBuilder {
     id: Option<Uuid>,
     portfolio: Option<Arc<Mutex<Portfolio>>>,
+    database: Option<Arc<Mutex<Database>>>,
     binance_client: Option<BinanceClient>,
     command_reciever: Option<Receiver<Command>>,
     command_transmitters: Option<HashMap<Asset, mpsc::Sender<Command>>>,
@@ -149,6 +197,7 @@ impl CoreBuilder {
     pub fn new() -> Self {
         CoreBuilder {
             id: None,
+            database: None,
             portfolio: None,
             binance_client: None,
             command_reciever: None,
@@ -186,6 +235,12 @@ impl CoreBuilder {
             ..self
         }
     }
+    pub fn database(self, value: Arc<Mutex<Database>>) -> Self {
+        CoreBuilder {
+            database: Some(value),
+            ..self
+        }
+    }
     pub fn traders(self, value: Vec<Trader>) -> Self {
         CoreBuilder {
             traders: Some(value),
@@ -193,14 +248,19 @@ impl CoreBuilder {
         }
     }
     pub fn build(self) -> Result<Core, CoreError> {
+        let binance_client = self
+            .binance_client
+            .ok_or(CoreError::BuilderIncomplete("binance client"))?;
+        let binance_client = Arc::new(binance_client);
         let core = Core {
             id: self.id.ok_or(CoreError::BuilderIncomplete("core_id"))?,
+            database: self
+                .database
+                .ok_or(CoreError::BuilderIncomplete("database"))?,
             portfolio: self
                 .portfolio
                 .ok_or(CoreError::BuilderIncomplete("portfolio"))?,
-            binance_client: self
-                .binance_client
-                .ok_or(CoreError::BuilderIncomplete("binance client"))?,
+            binance_client,
             command_reciever: self
                 .command_reciever
                 .ok_or(CoreError::BuilderIncomplete("command reciever"))?,
