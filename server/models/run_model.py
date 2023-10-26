@@ -1,11 +1,15 @@
+#%%
 import tensorflow as tf
 import sqlite3
 import pandas as pd
 from ta import add_all_ta_features
 import warnings
+import pickle
+from sklearn.preprocessing import RobustScaler
+
 
 def run():
-    warnings.simplefilter(action='ignore', category=FutureWarning)
+    # warnings.simplefilter(action='ignore', category=FutureWarning)
     # Load the saved model
     loaded_model = tf.keras.models.load_model("./models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
 
@@ -20,9 +24,9 @@ def run():
               WHERE asset = 'BTCUSDT'
               ORDER BY open_time DESC
               LIMIT 50;"""
+
     klines = pd.read_sql_query(query, conn)
     # Make predictions using the loaded model
-
     klines = add_all_ta_features(klines,
                                  open = "open", 
                                  close = "close",
@@ -30,13 +34,31 @@ def run():
                                  low = "low",
                                  high = "high",
                                  fillna=True).dropna()
-    predictions = loaded_model.predict(klines[klines.columns[~klines.columns.isin(['open_time', 'open','close', 'low', 'high', 'volume', 'signal'])]].astype('float32'))
+    
+    columns_not_to_predict = ['open_time', 
+                         'close', 
+                         'low', 
+                         'high', 
+                         'volume']
+    klines_to_predict = klines.drop(columns=columns_not_to_predict)
+    
 
-    predicted_classes = tf.argmax(predictions, axis=1)  # For a classification model
+    scaler = RobustScaler()
+    klines_to_predict = scaler.fit_transform(klines_to_predict.astype('float32'))
+    predictions = loaded_model.predict(klines_to_predict)
+    file_path = 'neural_net_model/cutoffs.pickle'
+    with open(file_path, 'rb') as handle:
+        cutoffs = pickle.load(handle)
+
+    cut_predictions = pd.DataFrame()
+    for index, cutoff in enumerate(cutoffs):  
+        cut_predictions[f'model_prediction_V{index+1}']=  list(zip(*predictions))[index] > cutoff  
     def set_model_prediction(row):
-        if row == 1:
-            return "hold"
-        elif row == 0:
+        if row["model_prediction_V1"]:
+            return "buy"
+        elif row["model_prediction_V3"]:
             return "sell"
         else:
-            return "buy"
+            return "hold"
+    
+    print(set_model_prediction(cut_predictions.iloc[-1]))

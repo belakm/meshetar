@@ -33,16 +33,16 @@ def get_historical_ohlc_data(symbol,past_days=None,interval=None):
 
     return D
 # %%
-klines = get_historical_ohlc_data("BTCUSDT",  past_days=1, interval= "5m")
+klines = get_historical_ohlc_data("BTCUSDT",  past_days=10, interval= "5m")
 klines["open_time"] = pd.to_datetime(klines["open_date_time"])
 klines['symbol'] = klines['symbol'].astype(str)
 # Convert 'open,' 'high,' 'low,' 'close,' 'volume,' 'taker_base_vol,' and 'taker_quote_vol' to numeric (float)
 columns_to_convert = ['open', 'high', 'low', 'close', 'volume', 'taker_base_vol', 'taker_quote_vol']
 klines[columns_to_convert] = klines[columns_to_convert].apply(pd.to_numeric, errors='coerce')
+klines.rename(columns={'symbol': 'asset'}, inplace=True)
 # %%
 conn = sqlite3.connect('database.sqlite')
 cursor = conn.cursor()
-klines.to_sql('klines', conn, if_exists='replace', index=False)
+klines.to_sql('candles', conn, if_exists='replace', index=False)
 conn.close()
-
 # %%
