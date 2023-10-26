@@ -1,4 +1,4 @@
-use crate::portfolio::error::PortfolioError;
+use crate::{portfolio::error::PortfolioError, strategy::error::StrategyError};
 use thiserror::Error;
 
 /// All errors generated in the barter::portfolio module.
@@ -10,4 +10,6 @@ pub enum TraderError {
     FillBuilderIncomplete(&'static str),
     #[error("Failed to interact with Portfolio")]
     RepositoryInteraction(#[from] PortfolioError),
+    #[error("Strategy error")]
+    StrategyError(#[from] StrategyError),
 }

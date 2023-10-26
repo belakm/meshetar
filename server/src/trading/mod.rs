@@ -96,7 +96,7 @@ impl Trader {
                                 self.event_queue.push_back(Event::Signal(signal));
                             }
                             Ok(None) => { /* No signal = do nothing*/ }
-                            Err(e) => warn!("{}", e),
+                            Err(e) => return Err(TraderError::from(e)),
                         }
                     }
                     Event::Signal(signal) => {

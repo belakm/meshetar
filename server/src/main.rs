@@ -163,7 +163,7 @@ async fn run() -> Result<(), MainError> {
         .build()?;
 
     tokio::spawn(core_events_listener(event_receiver));
-    let _ = tokio::time::timeout(Duration::from_secs(120), core.run()).await;
+    let _ = tokio::time::timeout(Duration::from_secs(20), core.run()).await;
 
     // rocket::build()
     //     .attach(CORS)
