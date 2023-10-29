@@ -119,7 +119,6 @@ impl Trader {
                             self.event_queue.push_back(Event::Order(order));
                         }
                     }
-
                     Event::Order(order) => {
                         let fill = self
                             .execution
@@ -129,7 +128,6 @@ impl Trader {
                         self.event_transmitter.send(Event::Fill(fill.clone()));
                         self.event_queue.push_back(Event::Fill(fill));
                     }
-
                     Event::Fill(fill) => {
                         let fill_side_effect_events =
                             self.portfolio.lock().await.update_from_fill(&fill).await?;

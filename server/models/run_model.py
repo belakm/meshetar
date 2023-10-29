@@ -5,7 +5,9 @@ from ta import add_all_ta_features
 import warnings
 
 def run():
+    # Comment out the warning silencers below when developing:
     warnings.simplefilter(action='ignore', category=FutureWarning)
+    warnings.simplefilter("ignore", category=RuntimeWarning)
     # Load the saved model
     loaded_model = tf.keras.models.load_model("./models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
 
