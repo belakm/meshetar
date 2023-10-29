@@ -13,6 +13,7 @@ from scipy.special import softmax
 from sklearn.preprocessing import StandardScaler, LabelEncoder, RobustScaler
 from sklearn.metrics import roc_curve, roc_auc_score, RocCurveDisplay, confusion_matrix
 from sklearn.model_selection import train_test_split
+import pickle
 
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 50)
@@ -22,6 +23,8 @@ import os
 print(os.path.abspath('./database.sqlite'))
 conn = sqlite3.connect('./database.sqlite')
 # cursor = sqliteConnection.cursor()
+
+# %%
 query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
                  high, 
                  low, 
@@ -29,9 +32,12 @@ query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
                  volume
           FROM candles 
           WHERE asset = 'BTCUSDT';"""
-klines = pd.read_sql_query(query, conn)
-# %%
 
+# %%
+klines = pd.read_sql_query(query, conn)
+klines['open_time'] = pd.to_datetime(klines['open_time'])
+klines.loc[:, klines.columns.difference(['open_time'])] = klines.loc[:, klines.columns.difference(['open_time'])].apply(pd.to_numeric, errors='coerce')
+#%%
 klines = add_all_ta_features(klines,
                              open = "open", 
                              close = "close",
@@ -40,21 +46,22 @@ klines = add_all_ta_features(klines,
                              high = "high",
                              fillna=True).dropna()
 # %%
-peaks, _ = find_peaks(klines["close"], distance = 50)
-valleys, _ = find_peaks(-klines["close"], distance  = 50)
+peaks, _ = find_peaks(klines["close"], distance = 12)
+klines["close"] = klines["close"].astype(float)
+valleys, _ = find_peaks(-klines["close"], distance  = 12)
 # plt.plot( klines["close"])
 # plt.plot(peaks, klines["close"][peaks], "x", color = "green")
 # plt.plot(valleys, klines["close"][valleys], "+", color = "red")
 # plt.show()
 
 # %%
-klines["signal"] = 0
-klines.loc[valleys, 'signal'] = 1
-klines.loc[peaks, 'signal'] = -1
+klines["signal"] = "hold"
+klines.loc[valleys, 'signal'] = "buy"
+klines.loc[peaks, 'signal'] = "sell"
 # %%
 X_train , X_test, y_train , y_test = train_test_split(klines[klines.columns[~klines.columns.isin(['open_time', 'open','close', 'low', 'high', 'volume', 'signal'])]], klines[['signal']], test_size=0.2, random_state=44)
 # %%
-# y_train['target'] = y_train.idxmax(axis=1)
+# y_train['target'] = y_train['signal'].idxmax(axis = 0)
 # y_test['target'] = y_test.idxmax(axis=0)
 # %%
 label_encoder = LabelEncoder()
@@ -98,8 +105,8 @@ history = model.fit(
     epochs=1000, batch_size=86,
     validation_data=(X_test, y_test['target_encoded']),
     callbacks=[scheduler],
-    # sample_weight=sample_weights
-    # class_weight=normalized_class_weights
+    sample_weight=sample_weights,
+    # class_weight=normalized_class_weights,
 )
 #%%
 plt.plot(history.history["loss"])
@@ -109,6 +116,7 @@ plt.show()
 train_proba = model.predict(X_train)
 test_proba = model.predict(X_test)
 # %%
+cutoffs = []  # Create an empty list to store the cutoffs
 for class_index in range(len(label_encoder.classes_)):
     fpr_train, tpr_train, thresholds_train = roc_curve(y_train['target_encoded'] == class_index, train_proba[:, class_index])
     roc = RocCurveDisplay.from_predictions(y_train['target_encoded'] == class_index, train_proba[:, class_index])
@@ -124,21 +132,26 @@ for class_index in range(len(label_encoder.classes_)):
 
     optimal_cutoff_index = np.argmax(tpr_train - fpr_train)
     optimal_cutoff = thresholds_train[optimal_cutoff_index]
-    print(f"{class_index, optimal_cutoff =}")
+
+    cutoffs.append(optimal_cutoff)  # Append the class index and optimal cutoff as a tuple    print(f"{class_index, optimal_cutoff =}")
 
     y_train[f'model_prediction_V{class_index+1}'] = list(zip(*train_proba))[class_index] > optimal_cutoff
     y_test[f'model_prediction_V{class_index+1}'] = list(zip(*test_proba))[class_index] > optimal_cutoff
 
 # %%
+with open('neural_net_model/cutoffs.pickle', 'wb') as handle:
+    pickle.dump(cutoffs, handle, protocol=-1)
+
+# %%
 def set_model_prediction(row):
     if row["model_prediction_V1"]:
-        return "1"
+        return "buy"
     elif row["model_prediction_V3"]:
-        return "-1"
+        return "sell"
     else:
-        return "0"
-y_train['model_prediction'] = y_train.apply(set_model_prediction, axis=1).astype(int)
-y_test['model_prediction'] = y_test.apply(set_model_prediction, axis=1).astype(int)
+        return "hold"
+y_train['model_prediction'] = y_train.apply(set_model_prediction, axis=1).astype(str)
+y_test['model_prediction'] = y_test.apply(set_model_prediction, axis=1).astype(str)
 
 # %%
 conf_matrix = confusion_matrix(y_train['signal'], y_train['model_prediction'], labels=label_encoder.classes_)
@@ -157,4 +170,6 @@ plt.ylabel('Actual Target')
 plt.title('Confusion Matrix test')
 plt.show()
 
-model.save("./models/neural_net_model")
+model.save("./neural_net_model")
+
+# %%
