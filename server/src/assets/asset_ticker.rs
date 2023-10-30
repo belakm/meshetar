@@ -88,13 +88,15 @@ pub async fn new_ticker(asset: Asset) -> Result<UnboundedReceiver<MarketEvent>, 
                         serde_json::from_str(&string_data);
                     match raw_asset_parse {
                         Ok(new_kline) => {
-                            tx.send(MarketEvent {
+                            let _ = tx.send(MarketEvent {
                                 time: Utc.timestamp_opt(new_kline.E, 0).unwrap(),
                                 asset: asset.clone(),
                                 detail: MarketEventDetail::Candle(Candle::from(&new_kline)),
                             });
                         }
-                        Err(e) => warn!("Error parsing asset feed event: {}", e),
+                        Err(e) => {
+                            warn!("Error parsing asset feed event: {}", e);
+                        }
                     }
                 }
                 Err(e) => warn!("Error recieving on PRICE SOCKET: {:?}", e),

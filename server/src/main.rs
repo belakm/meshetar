@@ -23,7 +23,7 @@ use rocket::{
     http::Status,
     Error as RocketError, Request, Response,
 };
-use std::{collections::HashMap, env, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc};
 use strategy::Strategy;
 use thiserror::Error;
 use tokio::sync::Mutex;
@@ -164,10 +164,14 @@ async fn run() -> Result<(), MainError> {
 
     let listener_task = tokio::spawn(core_events_listener(event_receiver, database));
     // let _ = tokio::time::timeout(Duration::from_secs(20), core.run());
-    let core_task = tokio::spawn(async move {
-        core.run().await;
-    });
-    let _ = tokio::join!(core_task, listener_task);
+    let core_task = tokio::spawn(async move { core.run().await });
+    let (core_result, listener_result) = tokio::join!(core_task, listener_task);
+    if let Err(core_error) = core_result {
+        error!("{}", core_error);
+    }
+    if let Err(listener_error) = listener_result {
+        error!("{}", listener_error);
+    }
 
     //let _3 = tokio::spawn(async { loop {} }).await;
 

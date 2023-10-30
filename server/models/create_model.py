@@ -139,7 +139,7 @@ for class_index in range(len(label_encoder.classes_)):
     y_test[f'model_prediction_V{class_index+1}'] = list(zip(*test_proba))[class_index] > optimal_cutoff
 
 # %%
-with open('neural_net_model/cutoffs.pickle', 'wb') as handle:
+with open('./models/cutoffs.pickle', 'wb') as handle:
     pickle.dump(cutoffs, handle, protocol=-1)
 
 # %%
@@ -170,6 +170,6 @@ plt.ylabel('Actual Target')
 plt.title('Confusion Matrix test')
 plt.show()
 
-model.save("./neural_net_model")
+model.save("./models/neural_net_model")
 
 # %%

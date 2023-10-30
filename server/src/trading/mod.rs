@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, sync::Arc};
 use strum::{Display, EnumString};
 use tokio::sync::{mpsc, Mutex};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use self::{error::TraderError, execution::Execution};
@@ -96,7 +96,10 @@ impl Trader {
                                 self.event_queue.push_back(Event::Signal(signal));
                             }
                             Ok(None) => { /* No signal = do nothing*/ }
-                            Err(e) => return Err(TraderError::from(e)),
+                            Err(e) => {
+                                error!("Exiting on strategy error. {}", e);
+                                return Err(TraderError::from(e));
+                            }
                         }
                     }
                     Event::Signal(signal) => {

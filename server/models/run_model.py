@@ -16,6 +16,8 @@ def run():
     loaded_model = tf.keras.models.load_model("./models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
     conn = sqlite3.connect('./database.sqlite')
     # cursor = sqliteConnection.cursor()
+    print("HELLO")
+
     query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
                      high, 
                      low, 
@@ -43,11 +45,10 @@ def run():
                          'volume']
     klines_to_predict = klines.drop(columns=columns_not_to_predict)
     
-
     scaler = RobustScaler()
     klines_to_predict = scaler.fit_transform(klines_to_predict.astype('float32'))
     predictions = loaded_model.predict(klines_to_predict)
-    file_path = 'neural_net_model/cutoffs.pickle'
+    file_path = './models/cutoffs.pickle'
     with open(file_path, 'rb') as handle:
         cutoffs = pickle.load(handle)
 
@@ -61,5 +62,4 @@ def run():
             return "sell"
         else:
             return "hold"
-    
     print(set_model_prediction(cut_predictions.iloc[-1]))
