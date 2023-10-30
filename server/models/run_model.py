@@ -71,5 +71,8 @@ def run():
             return "sell"
         else:
             return "hold"
-    print(set_model_prediction(cut_predictions.iloc[-1]))
+    result = set_model_prediction(cut_predictions.iloc[-1])
+    print(result)
+    return result
+
 # %%
