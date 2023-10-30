@@ -9,10 +9,11 @@ from sklearn.preprocessing import RobustScaler
 
 
 def run():
-    # warnings.simplefilter(action='ignore', category=FutureWarning)
+    # Comment out the warning silencers below when developing:
+    warnings.simplefilter(action='ignore', category=FutureWarning)
+    warnings.simplefilter("ignore", category=RuntimeWarning)
     # Load the saved model
     loaded_model = tf.keras.models.load_model("./models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
-
     conn = sqlite3.connect('./database.sqlite')
     # cursor = sqliteConnection.cursor()
     query = """

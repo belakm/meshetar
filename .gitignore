@@ -5,6 +5,7 @@
 /server/database.sqlite-journal
 /server/renv
 /server/models/prediction_model.rds
+/server/neural_net_model
 /server/static/historical_trading_signals_model.svg
 /server/static/plot.svg
 /server/.Rhistory

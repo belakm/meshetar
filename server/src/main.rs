@@ -159,11 +159,17 @@ async fn run() -> Result<(), MainError> {
         .command_reciever(command_receiver)
         .command_transmitters(command_transmitters)
         .traders(traders)
-        .database(database)
+        .database(database.clone())
         .build()?;
 
-    tokio::spawn(core_events_listener(event_receiver));
-    let _ = tokio::time::timeout(Duration::from_secs(20), core.run()).await;
+    let listener_task = tokio::spawn(core_events_listener(event_receiver, database));
+    // let _ = tokio::time::timeout(Duration::from_secs(20), core.run());
+    let core_task = tokio::spawn(async move {
+        core.run().await;
+    });
+    let _ = tokio::join!(core_task, listener_task);
+
+    //let _3 = tokio::spawn(async { loop {} }).await;
 
     // rocket::build()
     //     .attach(CORS)
