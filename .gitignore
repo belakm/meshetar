@@ -8,6 +8,7 @@
 /server/static/historical_trading_signals_model.svg
 /server/static/plot.svg
 /server/.Rhistory
+/server/models/neural_net_model
 /app/config.toml
 /app/target
 /app/dist

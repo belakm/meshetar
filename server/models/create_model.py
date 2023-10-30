@@ -26,6 +26,7 @@ conn = sqlite3.connect('./database.sqlite')
 
 # %%
 query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
+                open,
                  high, 
                  low, 
                  close, 
@@ -58,8 +59,28 @@ valleys, _ = find_peaks(-klines["close"], distance  = 12)
 klines["signal"] = "hold"
 klines.loc[valleys, 'signal'] = "buy"
 klines.loc[peaks, 'signal'] = "sell"
+
 # %%
-X_train , X_test, y_train , y_test = train_test_split(klines[klines.columns[~klines.columns.isin(['open_time', 'open','close', 'low', 'high', 'volume', 'signal'])]], klines[['signal']], test_size=0.2, random_state=44)
+
+columns_not_to_predict = [
+    'open_time', 
+    'open',
+    'close', 
+    'low', 
+    'high', 
+    'volume',
+    'signal']
+klines_to_predict = klines.drop(columns=columns_not_to_predict)
+# %%
+
+lags = range(1, 15)
+klines_to_predict.assign(**{
+    f'{col} (t-{lag})': klines_to_predict[col].shift(lag)
+    for lag in lags
+    for col in klines_to_predict
+})
+# %%
+X_train , X_test, y_train , y_test = train_test_split(klines_to_predict, klines[['signal']], test_size=0.2, random_state=44)
 # %%
 # y_train['target'] = y_train['signal'].idxmax(axis = 0)
 # y_test['target'] = y_test.idxmax(axis=0)
@@ -98,7 +119,7 @@ normalized_class_weights = {cls: weight / sum(class_weights) for cls, weight in 
 #%%
 decay_rate = 0.0005
 sample_weights = np.exp(-decay_rate * (len(y_train) - y_train.index))
-plt.plot(sample_weights)
+# plt.plot(sample_weights)
 #%%
 history = model.fit(
     X_train, y_train['target_encoded'],
