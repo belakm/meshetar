@@ -16,17 +16,17 @@ def run():
     loaded_model = tf.keras.models.load_model("./models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
     conn = sqlite3.connect('./database.sqlite')
     # cursor = sqliteConnection.cursor()
-    print("HELLO")
-
-    query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
-                     high, 
-                     low, 
-                     close, 
-                     volume
-              FROM candles
-              WHERE asset = 'BTCUSDT'
-              ORDER BY open_time DESC
-              LIMIT 50;"""
+    query = """
+    SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
+    open,
+    high, 
+    low, 
+    close, 
+    volume
+    FROM candles
+    WHERE asset = 'BTCUSDT'
+    ORDER BY open_time DESC
+    LIMIT 50;"""
 
     klines = pd.read_sql_query(query, conn)
     # Make predictions using the loaded model
@@ -38,13 +38,22 @@ def run():
                                  high = "high",
                                  fillna=True).dropna()
     
-    columns_not_to_predict = ['open_time', 
-                         'close', 
-                         'low', 
-                         'high', 
-                         'volume']
+    columns_not_to_predict = [
+        'open_time', 
+        'open',
+        'close', 
+        'low', 
+        'high', 
+        'volume']
     klines_to_predict = klines.drop(columns=columns_not_to_predict)
     
+    lags = range(1, 15)
+    klines_to_predict.assign(**{
+        f'{col} (t-{lag})': klines_to_predict[col].shift(lag)
+        for lag in lags
+        for col in klines_to_predict
+    })
+
     scaler = RobustScaler()
     klines_to_predict = scaler.fit_transform(klines_to_predict.astype('float32'))
     predictions = loaded_model.predict(klines_to_predict)
@@ -63,3 +72,4 @@ def run():
         else:
             return "hold"
     print(set_model_prediction(cut_predictions.iloc[-1]))
+# %%
