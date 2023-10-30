@@ -50,10 +50,7 @@ klines = add_all_ta_features(klines,
 peaks, _ = find_peaks(klines["close"], distance = 12)
 klines["close"] = klines["close"].astype(float)
 valleys, _ = find_peaks(-klines["close"], distance  = 12)
-# plt.plot( klines["close"])
-# plt.plot(peaks, klines["close"][peaks], "x", color = "green")
-# plt.plot(valleys, klines["close"][valleys], "+", color = "red")
-# plt.show()
+
 
 # %%
 klines["signal"] = "hold"
@@ -80,7 +77,11 @@ klines_to_predict.assign(**{
     for col in klines_to_predict
 })
 # %%
-X_train , X_test, y_train , y_test = train_test_split(klines_to_predict, klines[['signal']], test_size=0.2, random_state=44)
+X_train , X_test, y_train , y_test = train_test_split(
+    klines_to_predict, 
+    klines[['signal']], 
+    test_size=0.2,  
+    shuffle=False)
 # %%
 # y_train['target'] = y_train['signal'].idxmax(axis = 0)
 # y_test['target'] = y_test.idxmax(axis=0)
@@ -130,9 +131,9 @@ history = model.fit(
     # class_weight=normalized_class_weights,
 )
 #%%
-plt.plot(history.history["loss"])
-plt.plot(history.history["val_loss"])
-plt.show()
+# plt.plot(history.history["loss"])
+# plt.plot(history.history["val_loss"])
+# plt.show()
 #%%
 train_proba = model.predict(X_train)
 test_proba = model.predict(X_test)
@@ -140,16 +141,16 @@ test_proba = model.predict(X_test)
 cutoffs = []  # Create an empty list to store the cutoffs
 for class_index in range(len(label_encoder.classes_)):
     fpr_train, tpr_train, thresholds_train = roc_curve(y_train['target_encoded'] == class_index, train_proba[:, class_index])
-    roc = RocCurveDisplay.from_predictions(y_train['target_encoded'] == class_index, train_proba[:, class_index])
-    roc.plot()
-    plt.title(f"Train roc for class: {class_index}")
-    plt.show()
+    # roc = RocCurveDisplay.from_predictions(y_train['target_encoded'] == class_index, train_proba[:, class_index])
+    # roc.plot()
+    # plt.title(f"Train roc for class: {class_index}")
+    # plt.show()
 
     fpr_test, tpr_test, thresholds_test = roc_curve(y_test['target_encoded'] == class_index, test_proba[:, class_index])
-    roc = RocCurveDisplay.from_predictions(y_test['target_encoded'] == class_index, test_proba[:, class_index])
-    roc.plot()
-    plt.title(f"Test roc for class: {class_index}")
-    plt.show()
+    # roc = RocCurveDisplay.from_predictions(y_test['target_encoded'] == class_index, test_proba[:, class_index])
+    # roc.plot()
+    # plt.title(f"Test roc for class: {class_index}")
+    # plt.show()
 
     optimal_cutoff_index = np.argmax(tpr_train - fpr_train)
     optimal_cutoff = thresholds_train[optimal_cutoff_index]
@@ -176,21 +177,37 @@ y_test['model_prediction'] = y_test.apply(set_model_prediction, axis=1).astype(s
 
 # %%
 conf_matrix = confusion_matrix(y_train['signal'], y_train['model_prediction'], labels=label_encoder.classes_)
-plt.figure(figsize=(8, 6))
-sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=label_encoder.classes_, yticklabels=label_encoder.classes_)
-plt.xlabel('Model Prediction')
-plt.ylabel('Actual Target')
-plt.title('Confusion Matrix train')
-plt.show()
+# plt.figure(figsize=(8, 6))
+# sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=label_encoder.classes_, yticklabels=label_encoder.classes_)
+# plt.xlabel('Model Prediction')
+# plt.ylabel('Actual Target')
+# plt.title('Confusion Matrix train')
+# plt.show()
 # %%
 conf_matrix = confusion_matrix(y_test['signal'], y_test['model_prediction'], labels=label_encoder.classes_)
-plt.figure(figsize=(8, 6))
-sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=label_encoder.classes_, yticklabels=label_encoder.classes_)
-plt.xlabel('Model Prediction')
-plt.ylabel('Actual Target')
-plt.title('Confusion Matrix test')
-plt.show()
+# plt.figure(figsize=(8, 6))
+# sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=label_encoder.classes_, yticklabels=label_encoder.classes_)
+# plt.xlabel('Model Prediction')
+# plt.ylabel('Actual Target')
+# plt.title('Confusion Matrix test')
+# plt.show()
 
+# %%
 model.save("./models/neural_net_model")
+
+# %%
+test_set_close = klines.loc[y_test.index, 'close']
+
+plt.plot(test_set_close, label='Actual Close Prices', color='blue')
+plt.plot(test_set_close.index[y_test['model_prediction'] == "buy"], 
+         test_set_close[y_test['model_prediction'] == "buy"],
+         'go', label='Buy', markersize=3)
+plt.plot(test_set_close.index[y_test['model_prediction'] == "sell"], 
+         test_set_close[y_test['model_prediction'] == "sell"],
+         'ro', label='sell', markersize=3)
+plt.title('Buy and Sell Predictions vs. Actual Close Prices')
+plt.legend()
+plt.grid(True)
+plt.show()
 
 # %%
