@@ -8,16 +8,18 @@ import pickle
 from sklearn.preprocessing import RobustScaler
 
 
-def run():
+def run(candle_time=None):
     # Comment out the warning silencers below when developing:
     warnings.simplefilter(action='ignore', category=FutureWarning)
     warnings.simplefilter("ignore", category=RuntimeWarning)
+    warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
     # Load the saved model
     loaded_model = tf.keras.models.load_model("./models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
     conn = sqlite3.connect('./database.sqlite')
     # cursor = sqliteConnection.cursor()
-    query = """
-    SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
+    time_query = f"AND open_time <= \"{candle_time}\"" if candle_time else ""
+    query = f"""
+    SELECT open_time,
     open,
     high, 
     low, 
@@ -25,10 +27,14 @@ def run():
     volume
     FROM candles
     WHERE asset = 'BTCUSDT'
+    {time_query}
     ORDER BY open_time DESC
     LIMIT 50;"""
 
     klines = pd.read_sql_query(query, conn)
+    
+    print(klines.loc[0, 'open_time'])
+
     # Make predictions using the loaded model
     klines = add_all_ta_features(klines,
                                  open = "open", 

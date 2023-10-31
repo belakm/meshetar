@@ -1,24 +1,21 @@
 pub mod asset_ticker;
+pub mod backtest_ticker;
 pub mod book;
 pub mod error;
 pub mod routes;
-use std::sync::Arc;
-
 use self::{asset_ticker::KlineEvent, error::AssetError};
 use crate::{
-    database,
-    utils::{
-        binance_client::{BinanceClient, BINANCE_CLIENT},
-        formatting::{timestamp_to_dt, timestamp_to_string},
-        serde_utils::f64_from_string,
-    },
+    database::Database,
+    utils::{binance_client::BinanceClient, formatting::timestamp_to_dt},
 };
 use binance_spot_connector_rust::market::klines::KlineInterval;
 use chrono::{DateTime, Duration, Utc};
 use futures::TryFutureExt;
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+use std::sync::Arc;
 use strum::Display;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tracing::info;
 
 #[derive(PartialEq, Display, Debug, Hash, Eq, Clone, Serialize, Deserialize, PartialOrd)]
@@ -56,7 +53,7 @@ pub struct Liquidation {
     pub time: DateTime<Utc>,
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
+#[derive(FromRow, Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
 pub struct Candle {
     pub open_time: DateTime<Utc>,
     pub close_time: DateTime<Utc>,
@@ -146,8 +143,17 @@ impl MarketFeed {
             }
         }
     }
-    pub async fn new(asset: Asset) -> Result<Self, AssetError> {
+    pub async fn new_live_feed(asset: Asset) -> Result<Self, AssetError> {
         let receiver = asset_ticker::new_ticker(asset).await?;
+        Ok(Self {
+            market_receiver: receiver,
+        })
+    }
+    pub async fn new_backtest(
+        asset: Asset,
+        database: Arc<Mutex<Database>>,
+    ) -> Result<Self, AssetError> {
+        let receiver = backtest_ticker::new_ticker(asset, database).await?;
         Ok(Self {
             market_receiver: receiver,
         })

@@ -47,7 +47,7 @@ enum MainError {
     Trader(#[from] TraderError),
     #[error("Binance client error: {0}")]
     BinanceClient(#[from] BinanceClientError),
-    #[error("Asset Feed error: {0}")]
+    #[error("Assets: {0}")]
     Asset(#[from] AssetError),
     #[error("Rocket server error: {0}")]
     Rocket(#[from] RocketError),
@@ -119,6 +119,7 @@ async fn run() -> Result<(), MainError> {
     builder.filter(None, LevelFilter::Info); // a default for other libs
     builder.filter(Some("sqlx"), LevelFilter::Warn);
     builder.init();
+    const IS_LIVE: bool = false;
     let core_id = Uuid::new_v4();
     let (event_transmitter, event_receiver) = mpsc::unbounded_channel();
     let event_transmitter = EventTx::new(event_transmitter);
@@ -136,6 +137,16 @@ async fn run() -> Result<(), MainError> {
     let (command_transmitter, command_receiver) = mpsc::channel::<Command>(20);
     let (trader_command_transmitter, trader_command_receiver) = mpsc::channel::<Command>(20);
     let command_transmitters = HashMap::from([(Asset::BTCUSDT, trader_command_transmitter)]);
+    let market_receiver = if IS_LIVE {
+        MarketFeed::new_live_feed(Asset::BTCUSDT)
+            .await?
+            .market_receiver
+    } else {
+        MarketFeed::new_backtest(Asset::BTCUSDT, database.clone())
+            .await?
+            .market_receiver
+    };
+    let market_feed = MarketFeed { market_receiver };
 
     traders.push(
         Trader::builder()
@@ -144,9 +155,7 @@ async fn run() -> Result<(), MainError> {
             .command_reciever(trader_command_receiver)
             .event_transmitter(event_transmitter)
             .portfolio(Arc::clone(&portfolio))
-            .market_feed(MarketFeed {
-                market_receiver: MarketFeed::new(Asset::BTCUSDT).await?.market_receiver,
-            })
+            .market_feed(market_feed)
             .strategy(Strategy::new(Asset::BTCUSDT))
             .execution(Execution::new())
             .build()?,
@@ -162,7 +171,7 @@ async fn run() -> Result<(), MainError> {
         .database(database.clone())
         .build()?;
 
-    let listener_task = tokio::spawn(core_events_listener(event_receiver, database));
+    let listener_task = tokio::spawn(core_events_listener(event_receiver, database, IS_LIVE));
     // let _ = tokio::time::timeout(Duration::from_secs(20), core.run());
     let core_task = tokio::spawn(async move { core.run().await });
     let (core_result, listener_result) = tokio::join!(core_task, listener_task);

@@ -249,11 +249,10 @@ impl Database {
     ) -> Result<(), DatabaseError> {
         let connection = DB_POOL.get().unwrap();
         let mut tx = connection.begin().await?;
-        info!("{}", &candles.last().unwrap().open_time);
         for candle in candles {
             sqlx::query(
                 r#"
-                INSERT OR REPLACE INTO candles(asset, open_time, open, high, low, close, close_time, volume, trades)
+                INSERT OR REPLACE INTO candles(asset, open_time, open, high, low, close, close_time, volume, trade_count)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                 "#,
             )
@@ -271,6 +270,15 @@ impl Database {
         }
         tx.commit().await?;
         Ok(())
+    }
+
+    pub async fn fetch_all_candles(&mut self, asset: Asset) -> Result<Vec<Candle>, DatabaseError> {
+        let connection = DB_POOL.get().unwrap();
+        let candles: Vec<Candle> = sqlx::query_as("SELECT * FROM candles WHERE asset = ?1")
+            .bind(asset.to_string())
+            .fetch_all(connection)
+            .await?;
+        Ok(candles)
     }
 }
 

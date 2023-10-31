@@ -1,7 +1,7 @@
 extern crate cpython;
 
 use self::error::StrategyError;
-use crate::assets::{Asset, MarketEvent};
+use crate::assets::{Asset, MarketEvent, MarketEventDetail};
 use chrono::{DateTime, Utc};
 use cpython::{NoArgs, PyModule, PyResult, Python};
 use serde::{Deserialize, Serialize};
@@ -59,22 +59,27 @@ impl Strategy {
     }
     pub async fn generate_signal(
         &mut self,
-        _market_event: &MarketEvent,
+        market_event: &MarketEvent,
     ) -> Result<Option<Signal>, StrategyError> {
-        // Run model
-        let pyscript = include_str!("../../models/run_model.py");
-        let model_output = run_python_script(pyscript)?;
-        let signals = generate_signals_map(&model_output);
-        if signals.len() == 0 {
-            return Ok(None);
+        if let MarketEventDetail::Candle(candle) = &market_event.detail {
+            // Run model
+            let pyscript = include_str!("../../models/run_model.py");
+            let args = (candle.open_time.to_rfc3339(),);
+            let model_output = run_python_script(pyscript, args)?;
+            let signals = generate_signals_map(&model_output);
+            if signals.len() == 0 {
+                return Ok(None);
+            }
+            let time = Utc::now();
+            let signal = Signal {
+                time,
+                asset: self.asset.clone(),
+                signals,
+            };
+            Ok(Some(signal))
+        } else {
+            Ok(None)
         }
-        let time = Utc::now();
-        let signal = Signal {
-            time,
-            asset: self.asset.clone(),
-            signals,
-        };
-        Ok(Some(signal))
     }
 }
 
@@ -94,14 +99,14 @@ fn generate_signals_map(model_output: &str) -> HashMap<Decision, SignalStrength>
     signals
 }
 
-fn run_python_script(script: &str) -> PyResult<String> {
+fn run_python_script(script: &str, args: (String,)) -> PyResult<String> {
     let gil = Python::acquire_gil();
     let py = gil.python();
 
     let main_module = PyModule::import(py, "__main__")?;
     py.run(script, Some(&main_module.dict(py)), None)?;
 
-    let output: String = main_module.call(py, "run", NoArgs, None)?.extract(py)?;
+    let output: String = main_module.call(py, "run", args, None)?.extract(py)?;
     info!("{}", output);
     Ok(output)
 }
