@@ -1,9 +1,9 @@
 extern crate cpython;
 
 use self::error::StrategyError;
-use crate::assets::{Asset, MarketEvent, MarketEventDetail};
+use crate::assets::{Asset, MarketEvent, MarketEventDetail, MarketMeta};
 use chrono::{DateTime, Utc};
-use cpython::{NoArgs, PyModule, PyResult, Python};
+use cpython::{PyModule, PyResult, Python};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -15,6 +15,7 @@ pub mod routes;
 pub struct Signal {
     pub time: DateTime<Utc>,
     pub asset: Asset,
+    pub market_meta: MarketMeta,
     pub signals: HashMap<Decision, SignalStrength>,
 }
 
@@ -74,6 +75,10 @@ impl Strategy {
             let signal = Signal {
                 time,
                 asset: self.asset.clone(),
+                market_meta: MarketMeta {
+                    close: candle.close,
+                    time,
+                },
                 signals,
             };
             Ok(Some(signal))

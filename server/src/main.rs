@@ -14,7 +14,7 @@ use database::{error::DatabaseError, Database};
 use env_logger::Builder;
 use events::{core_events_listener, EventTx};
 use log::LevelFilter;
-use portfolio::{error::PortfolioError, Portfolio};
+use portfolio::{allocator::Allocator, error::PortfolioError, risk::RiskEvaluator, Portfolio};
 use rocket::{
     catch,
     fairing::{Fairing, Info, Kind},
@@ -129,6 +129,10 @@ async fn run() -> Result<(), MainError> {
         Portfolio::builder()
             .database(database.clone())
             .core_id(core_id.clone())
+            .allocation_manager(Allocator {
+                default_order_value: 1.0,
+            })
+            .risk_manager(RiskEvaluator {})
             .build()
             .map_err(MainError::from)?,
     ));

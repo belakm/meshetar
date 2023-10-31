@@ -1,31 +1,29 @@
-use std::sync::Arc;
-
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
-use uuid::Uuid;
-
-use crate::{
-    assets::{Asset, MarketMeta},
-    database::Database,
-    events::Event,
-    strategy::{Decision, Signal},
-    trading::{
-        execution::{Fees, FillEvent},
-        SignalForceExit,
-    },
-};
-
-use self::{
-    error::PortfolioError,
-    position::{determine_position_id, Position},
-};
-
 pub mod account;
+pub mod allocator;
 pub mod balance;
 pub mod error;
 pub mod position;
+pub mod risk;
 pub mod routes;
+
+use self::{
+    allocator::Allocator,
+    error::PortfolioError,
+    position::{determine_position_id, Position},
+    risk::RiskEvaluator,
+};
+use crate::{
+    assets::{Asset, MarketMeta, Side},
+    database::Database,
+    events::Event,
+    strategy::{Decision, Signal, SignalStrength},
+    trading::{execution::FillEvent, SignalForceExit},
+};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 #[derive(Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
 pub struct OrderEvent {
@@ -34,12 +32,13 @@ pub struct OrderEvent {
     pub decision: Decision,
     pub market_meta: MarketMeta,
     pub quantity: f64,
-    pub fees: Fees,
 }
 
 pub struct Portfolio {
     database: Arc<Mutex<Database>>,
     core_id: Uuid,
+    allocation_manager: Allocator,
+    risk_manager: RiskEvaluator,
 }
 
 impl Portfolio {
@@ -48,9 +47,48 @@ impl Portfolio {
     }
     pub async fn generate_order(
         &mut self,
-        _signal: &Signal,
+        signal: &Signal,
     ) -> Result<Option<OrderEvent>, PortfolioError> {
-        Ok(None)
+        // Determine the position_id & associated Option<Position> related to input SignalEvent
+        let position_id = determine_position_id(self.core_id, &signal.asset);
+        let position = self.database.lock().await.get_open_position(&position_id)?;
+
+        // If signal is advising to open a new Position rather than close one, check we have cash
+        if position.is_none() && self.no_cash_to_enter_new_position().await? {
+            return Ok(None);
+        }
+
+        // Parse signals from Strategy to determine net signal decision & associated strength
+        let position = position.as_ref();
+        let (signal_decision, signal_strength) =
+            match parse_signal_decisions(&position, &signal.signals) {
+                None => return Ok(None),
+                Some(net_signal) => net_signal,
+            };
+
+        // Construct mutable OrderEvent that can be modified by Allocation & Risk management
+        let mut order = OrderEvent {
+            time: Utc::now(),
+            asset: signal.asset.clone(),
+            market_meta: signal.market_meta,
+            decision: *signal_decision,
+            quantity: 0.0,
+        };
+
+        // Manage OrderEvent size allocation
+        self.allocation_manager
+            .allocate_order(&mut order, position, *signal_strength);
+
+        // Manage global risk when evaluating OrderEvent - keep the same, refine or cancel
+        Ok(self.risk_manager.evaluate_order(order))
+    }
+    async fn no_cash_to_enter_new_position(&mut self) -> Result<bool, PortfolioError> {
+        self.database
+            .lock()
+            .await
+            .get_balance(self.core_id)
+            .map(|balance| balance.available == 0.0)
+            .map_err(PortfolioError::RepositoryInteraction)
     }
     pub async fn generate_exit_order(
         &mut self,
@@ -90,9 +128,37 @@ impl Portfolio {
     }
 }
 
+fn parse_signal_decisions<'a>(
+    position: &'a Option<&Position>,
+    signals: &'a HashMap<Decision, SignalStrength>,
+) -> Option<(&'a Decision, &'a SignalStrength)> {
+    let signal_close_long = signals.get_key_value(&Decision::CloseLong);
+    let signal_long = signals.get_key_value(&Decision::Long);
+    let signal_close_short = signals.get_key_value(&Decision::CloseShort);
+    let signal_short = signals.get_key_value(&Decision::Short);
+
+    // If an existing Position exists, check for net close signals
+    if let Some(position) = position {
+        return match position.side {
+            Side::Buy if signal_close_long.is_some() => signal_close_long,
+            Side::Sell if signal_close_short.is_some() => signal_close_short,
+            _ => None,
+        };
+    }
+
+    // Else check for net open signals
+    match (signal_long, signal_short) {
+        (Some(signal_long), None) => Some(signal_long),
+        (None, Some(signal_short)) => Some(signal_short),
+        _ => None,
+    }
+}
+
 pub struct PortfolioBuilder {
     database: Option<Arc<Mutex<Database>>>,
     core_id: Option<Uuid>,
+    allocation_manager: Option<Allocator>,
+    risk_manager: Option<RiskEvaluator>,
 }
 
 impl PortfolioBuilder {
@@ -100,6 +166,8 @@ impl PortfolioBuilder {
         PortfolioBuilder {
             database: None,
             core_id: None,
+            allocation_manager: None,
+            risk_manager: None,
         }
     }
     pub fn database(self, database: Arc<Mutex<Database>>) -> Self {
@@ -114,11 +182,29 @@ impl PortfolioBuilder {
             ..self
         }
     }
+    pub fn allocation_manager(self, value: Allocator) -> Self {
+        Self {
+            allocation_manager: Some(value),
+            ..self
+        }
+    }
+    pub fn risk_manager(self, value: RiskEvaluator) -> Self {
+        Self {
+            risk_manager: Some(value),
+            ..self
+        }
+    }
     pub fn build(self) -> Result<Portfolio, PortfolioError> {
-        let mut portfolio = Portfolio {
+        let portfolio = Portfolio {
             core_id: self
                 .core_id
                 .ok_or(PortfolioError::BuilderIncomplete("core_id"))?,
+            allocation_manager: self
+                .allocation_manager
+                .ok_or(PortfolioError::BuilderIncomplete("allocation_manager"))?,
+            risk_manager: self
+                .risk_manager
+                .ok_or(PortfolioError::BuilderIncomplete("risk_manager"))?,
             database: self
                 .database
                 .ok_or(PortfolioError::BuilderIncomplete("database"))?,
