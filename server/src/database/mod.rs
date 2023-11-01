@@ -11,6 +11,7 @@ use crate::{
         },
         position::{determine_position_id, Position, PositionId},
     },
+    statistic::Statistic,
 };
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
@@ -20,6 +21,7 @@ pub struct Database {
     open_positions: HashMap<PositionId, Position>,
     closed_positions: HashMap<String, Vec<Position>>,
     current_balances: HashMap<BalanceId, Balance>,
+    statistics: HashMap<Asset, Statistic>,
 }
 impl Database {
     pub async fn new() -> Result<Database, DatabaseError> {
@@ -28,6 +30,7 @@ impl Database {
             open_positions: HashMap::new(),
             closed_positions: HashMap::new(),
             current_balances: HashMap::new(),
+            statistics: HashMap::new(),
         })
     }
 
@@ -169,15 +172,15 @@ impl Database {
         Ok(account)
     }
 
-    pub fn set_balance(&mut self, engine_id: Uuid, balance: Balance) -> Result<(), DatabaseError> {
+    pub fn set_balance(&mut self, core_id: Uuid, balance: Balance) -> Result<(), DatabaseError> {
         self.current_balances
-            .insert(Balance::balance_id(engine_id), balance);
+            .insert(Balance::balance_id(core_id), balance);
         Ok(())
     }
 
-    pub fn get_balance(&mut self, engine_id: Uuid) -> Result<Balance, DatabaseError> {
+    pub fn get_balance(&mut self, core_id: Uuid) -> Result<Balance, DatabaseError> {
         self.current_balances
-            .get(&Balance::balance_id(engine_id))
+            .get(&Balance::balance_id(core_id))
             .copied()
             .ok_or(DatabaseError::DataMissing)
     }
@@ -234,10 +237,10 @@ impl Database {
         Ok(())
     }
 
-    fn get_exited_positions(&mut self, engine_id: Uuid) -> Result<Vec<Position>, DatabaseError> {
+    fn get_exited_positions(&mut self, core_id: Uuid) -> Result<Vec<Position>, DatabaseError> {
         Ok(self
             .closed_positions
-            .get(&determine_exited_positions_id(engine_id))
+            .get(&determine_exited_positions_id(core_id))
             .map(Vec::clone)
             .unwrap_or_else(Vec::new))
     }
@@ -280,9 +283,25 @@ impl Database {
             .await?;
         Ok(candles)
     }
+
+    pub fn set_statistics(
+        &mut self,
+        asset: Asset,
+        statistic: Statistic,
+    ) -> Result<(), DatabaseError> {
+        self.statistics.insert(asset, statistic);
+        Ok(())
+    }
+
+    pub fn get_statistics(&mut self, asset: &Asset) -> Result<Statistic, DatabaseError> {
+        self.statistics
+            .get(asset)
+            .copied()
+            .ok_or(DatabaseError::DataMissing)
+    }
 }
 
 pub type ExitedPositionsId = String;
-pub fn determine_exited_positions_id(engine_id: Uuid) -> ExitedPositionsId {
-    format!("positions_exited_{}", engine_id)
+pub fn determine_exited_positions_id(core_id: Uuid) -> ExitedPositionsId {
+    format!("positions_exited_{}", core_id)
 }

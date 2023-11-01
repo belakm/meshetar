@@ -103,31 +103,35 @@ impl Trader {
                         }
                     }
                     Event::Signal(signal) => {
-                        if let Ok(Some(order)) =
-                            self.portfolio.lock().await.generate_order(&signal).await
-                        {
-                            self.event_transmitter.send(Event::Order(order.clone()));
-                            self.event_queue.push_back(Event::Order(order));
+                        match self.portfolio.lock().await.generate_order(&signal).await {
+                            Ok(order) => {
+                                if let Some(order) = order {
+                                    self.event_transmitter.send(Event::Order(order.clone()));
+                                    self.event_queue.push_back(Event::Order(order));
+                                }
+                            }
+                            Err(e) => warn!("{}", e),
                         }
                     }
                     Event::SignalForceExit(signal_force_exit) => {
-                        if let Ok(Some(order)) = self
+                        match self
                             .portfolio
                             .lock()
                             .await
                             .generate_exit_order(signal_force_exit)
                             .await
                         {
-                            self.event_transmitter.send(Event::Order(order.clone()));
-                            self.event_queue.push_back(Event::Order(order));
+                            Ok(order) => {
+                                if let Some(order) = order {
+                                    self.event_transmitter.send(Event::Order(order.clone()));
+                                    self.event_queue.push_back(Event::Order(order));
+                                }
+                            }
+                            Err(e) => warn!("{}", e),
                         }
                     }
                     Event::Order(order) => {
-                        let fill = self
-                            .execution
-                            .generate_fill(&order)
-                            .expect("failed to generate Fill");
-
+                        let fill = self.execution.generate_fill(&order)?;
                         self.event_transmitter.send(Event::Fill(fill.clone()));
                         self.event_queue.push_back(Event::Fill(fill));
                     }

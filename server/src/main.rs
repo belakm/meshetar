@@ -4,12 +4,13 @@ mod database;
 mod events;
 mod plotting;
 mod portfolio;
+mod statistic;
 mod strategy;
 mod trading;
 mod utils;
 
+use crate::core::{error::CoreError, Command, Core};
 use assets::{error::AssetError, Asset, MarketFeed};
-use core::{error::CoreError, Command, Core};
 use database::{error::DatabaseError, Database};
 use env_logger::Builder;
 use events::{core_events_listener, EventTx};

@@ -8,6 +8,7 @@ pub mod routes;
 
 use self::{
     allocator::Allocator,
+    balance::Balance,
     error::PortfolioError,
     position::{determine_position_id, Position},
     risk::RiskEvaluator,
@@ -16,6 +17,7 @@ use crate::{
     assets::{Asset, MarketMeta, Side},
     database::Database,
     events::Event,
+    statistic::{Config, Statistic},
     strategy::{Decision, Signal, SignalStrength},
     trading::{execution::FillEvent, SignalForceExit},
 };
@@ -23,6 +25,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
+use tracing::info;
 use uuid::Uuid;
 
 #[derive(Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
@@ -39,27 +42,57 @@ pub struct Portfolio {
     core_id: Uuid,
     allocation_manager: Allocator,
     risk_manager: RiskEvaluator,
+    starting_cash: f64,
 }
 
 impl Portfolio {
     pub fn builder() -> PortfolioBuilder {
         PortfolioBuilder::new()
     }
+    pub async fn bootstrap_database(
+        &self,
+        statistic_config: Config,
+        assets: Vec<Asset>,
+    ) -> Result<(), PortfolioError> {
+        self.database.lock().await.set_balance(
+            self.core_id,
+            Balance {
+                time: Utc::now(),
+                total: self.starting_cash,
+                available: self.starting_cash,
+            },
+        )?;
+        let database = self.database.lock().await;
+        for asset in assets {
+            database
+                .set_statistics(asset, Statistic::init(statistic_config))
+                .map_err(PortfolioError::RepositoryInteraction)?;
+        }
+        Ok(())
+    }
     pub async fn generate_order(
         &mut self,
         signal: &Signal,
     ) -> Result<Option<OrderEvent>, PortfolioError> {
+        info!("Generating new order.");
+
         // Determine the position_id & associated Option<Position> related to input SignalEvent
         let position_id = determine_position_id(self.core_id, &signal.asset);
-        let position = self.database.lock().await.get_open_position(&position_id)?;
+        let position = { self.database.lock().await.get_open_position(&position_id)? };
 
+        info!(
+            "Determining liquidity neccessary for new order. {:?}",
+            &position
+        );
         // If signal is advising to open a new Position rather than close one, check we have cash
         if position.is_none() && self.no_cash_to_enter_new_position().await? {
+            info!("No cash available to open a new position.");
             return Ok(None);
         }
 
         // Parse signals from Strategy to determine net signal decision & associated strength
         let position = position.as_ref();
+        info!("Parsing signal decision");
         let (signal_decision, signal_strength) =
             match parse_signal_decisions(&position, &signal.signals) {
                 None => return Ok(None),
@@ -75,20 +108,29 @@ impl Portfolio {
             quantity: 0.0,
         };
 
+        info!("Allocating order");
         // Manage OrderEvent size allocation
         self.allocation_manager
             .allocate_order(&mut order, position, *signal_strength);
 
+        info!("Running safety check");
         // Manage global risk when evaluating OrderEvent - keep the same, refine or cancel
         Ok(self.risk_manager.evaluate_order(order))
     }
     async fn no_cash_to_enter_new_position(&mut self) -> Result<bool, PortfolioError> {
-        self.database
+        info!("Start check");
+        let res = self
+            .database
             .lock()
             .await
             .get_balance(self.core_id)
-            .map(|balance| balance.available == 0.0)
-            .map_err(PortfolioError::RepositoryInteraction)
+            .map(|balance| {
+                info!("balance {:?}", &balance);
+                Ok(balance.available == 0.0)
+            })
+            .map_err(PortfolioError::RepositoryInteraction)?;
+        info!("End check");
+        res
     }
     pub async fn generate_exit_order(
         &mut self,
@@ -159,6 +201,7 @@ pub struct PortfolioBuilder {
     core_id: Option<Uuid>,
     allocation_manager: Option<Allocator>,
     risk_manager: Option<RiskEvaluator>,
+    starting_cash: Option<f64>,
 }
 
 impl PortfolioBuilder {
@@ -168,6 +211,7 @@ impl PortfolioBuilder {
             core_id: None,
             allocation_manager: None,
             risk_manager: None,
+            starting_cash: None,
         }
     }
     pub fn database(self, database: Arc<Mutex<Database>>) -> Self {
@@ -204,6 +248,9 @@ impl PortfolioBuilder {
                 .ok_or(PortfolioError::BuilderIncomplete("allocation_manager"))?,
             risk_manager: self
                 .risk_manager
+                .ok_or(PortfolioError::BuilderIncomplete("risk_manager"))?,
+            starting_cash: self
+                .starting_cash
                 .ok_or(PortfolioError::BuilderIncomplete("risk_manager"))?,
             database: self
                 .database

@@ -2,7 +2,7 @@ use super::OrderEvent;
 
 pub struct RiskEvaluator {}
 impl RiskEvaluator {
-    pub fn evaluate_order(&self, mut order: OrderEvent) -> Option<OrderEvent> {
+    pub fn evaluate_order(&self, order: OrderEvent) -> Option<OrderEvent> {
         if self.risk_too_high(&order) {
             return None;
         }
