@@ -5,10 +5,12 @@ import datetime as dt
 import time
 import toml
 import sqlite3
-
+import os
+while not os.path.basename(os.getcwd()) == 'meshetar':
+    os.chdir('..')  # Move up one directory
 #%%
 # Read and parse the TOML configuration file
-config = toml.load('../config.toml')
+config = toml.load('server/config.toml')
 client =  binance.Client(config["binance_api_key"],
                 config["binance_api_secret"],
                 testnet=True)
@@ -34,6 +36,7 @@ def get_historical_ohlc_data(symbol,past_days=None,interval=None):
     return D
 # %%
 klines = get_historical_ohlc_data("BTCUSDT",  past_days=30, interval= "5m")
+
 klines["open_time"] = pd.to_datetime(klines["open_date_time"])
 klines['symbol'] = klines['symbol'].astype(str)
 # Convert 'open,' 'high,' 'low,' 'close,' 'volume,' 'taker_base_vol,' and 'taker_quote_vol' to numeric (float)
