@@ -33,7 +33,7 @@ def get_historical_ohlc_data(symbol,past_days=None,interval=None):
 
     return D
 # %%
-klines = get_historical_ohlc_data("BTCUSDT",  past_days=10, interval= "5m")
+klines = get_historical_ohlc_data("BTCUSDT",  past_days=30, interval= "5m")
 klines["open_time"] = pd.to_datetime(klines["open_date_time"])
 klines['symbol'] = klines['symbol'].astype(str)
 # Convert 'open,' 'high,' 'low,' 'close,' 'volume,' 'taker_base_vol,' and 'taker_quote_vol' to numeric (float)

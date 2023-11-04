@@ -47,9 +47,13 @@ klines = add_all_ta_features(klines,
                              high = "high",
                              fillna=True).dropna()
 # %%
-peaks, _ = find_peaks(klines["close"], distance = 12)
+
+one_percent_of_klines = klines.shape[0]*0.01
+peaks, _ = find_peaks(klines["close"], 
+                      distance = one_percent_of_klines)
 klines["close"] = klines["close"].astype(float)
-valleys, _ = find_peaks(-klines["close"], distance  = 12)
+valleys, _ = find_peaks(-klines["close"], 
+                         distance = one_percent_of_klines)
 
 
 # %%
@@ -69,7 +73,6 @@ columns_not_to_predict = [
     'signal']
 klines_to_predict = klines.drop(columns=columns_not_to_predict)
 # %%
-
 lags = range(1, 15)
 klines_to_predict.assign(**{
     f'{col} (t-{lag})': klines_to_predict[col].shift(lag)
@@ -209,5 +212,53 @@ plt.title('Buy and Sell Predictions vs. Actual Close Prices')
 plt.legend()
 plt.grid(True)
 plt.show()
+
+plt.plot( klines["close"])
+plt.plot(peaks, klines["close"][peaks], "x", color = "red")
+plt.plot(valleys, klines["close"][valleys], "+", color = "green")
+plt.savefig('historic_signals.svg', format='svg')
+
+
+# %%
+# Backtesting
+back_test = pd.DataFrame(
+    {'close': test_set_close, 
+     'returns' : np.log(test_set_close/test_set_close.shift(1)),
+     'predicted_signal':  y_test['model_prediction']})
+
+back_test['position'] = back_test['predicted_signal'].replace(to_replace="hold", method='ffill')
+back_test['position'] = back_test['position'].shift(1)
+
+# Create an initial balance (starting balance)
+current_balance = 10000
+back_test.at[0, 'balance'] = current_balance
+back_test
+# %%
+for index, row in back_test.iterrows():
+    if row['position'] == 'buy' and current_balance == 0:
+        back_test.at[index, 'balance'] = 0
+        continue
+    elif row['position'] == 'buy' and current_balance != 0:
+        back_test.at[index, 'balance'] = 0
+        current_stake = current_balance
+        current_balance = 0
+        close_price_at_buy = back_test.at[index - 1, 'close']
+    elif row['position'] == 'sell' and current_stake == 0:
+        back_test.at[index, 'balance'] = current_balance
+        continue
+    elif row['position'] == 'sell' and current_stake != 0:
+        if index + 1 < len(back_test) and current_stake != 0:
+            current_stake = row['close']-close_price_at_buy + current_stake
+            back_test.at[index, 'balance'] = current_stake
+            current_balance = current_stake
+            current_stake = 0
+
+back_test.head(15)
+# %%
+balance_difference = back_test['balance'].iloc[-1] - back_test['balance'].iloc[0] 
+pct_change = (balance_difference / back_test['balance'].iloc[-1])*100
+f"From {initial_balance}€ returns were: {balance_difference:.1f}, which is {pct_change:.3f}%"
+
+
 
 # %%
