@@ -91,11 +91,11 @@ impl Strategy {
 fn generate_signals_map(model_output: &str) -> HashMap<Decision, SignalStrength> {
     let mut signals = HashMap::with_capacity(4);
     match model_output {
-        "buy" => {
+        "sell" => {
             signals.insert(Decision::Short, SignalStrength(1.0));
             signals.insert(Decision::CloseLong, SignalStrength(1.0));
         }
-        "sell" => {
+        "buy" => {
             signals.insert(Decision::Long, SignalStrength(1.0));
             signals.insert(Decision::CloseShort, SignalStrength(1.0));
         }

@@ -134,14 +134,30 @@ impl PnLReturnSummary {
     pub fn update_trading_session_duration(&mut self, position: &Position) {
         self.duration = match position.meta.exit_balance {
             None => {
+                info!(
+                    "Duration update: position time {}, self time: {}",
+                    position.meta.update_time, self.time
+                );
                 // Since Position is not exited, estimate duration w/ last_update_time
                 position.meta.update_time.signed_duration_since(self.time)
             }
-            Some(exit_balance) => exit_balance.time.signed_duration_since(self.time),
+            Some(exit_balance) => {
+                info!(
+                    "Duration exit balance: balance_time: {} selftime: {}",
+                    exit_balance.time, self.time
+                );
+                exit_balance.time.signed_duration_since(self.time)
+            }
         }
     }
 
     pub fn update_trades_per_day(&mut self) {
+        warn!(
+            "TRADES PER DAY count: {} fraction of day {}, duration: {}",
+            self.total.count,
+            (self.duration.num_seconds() as f64 / PnLReturnSummary::SECONDS_IN_DAY),
+            self.duration.num_seconds()
+        );
         self.trades_per_day = self.total.count as f64
             / (self.duration.num_seconds() as f64 / PnLReturnSummary::SECONDS_IN_DAY)
     }
@@ -153,6 +169,7 @@ impl PnLReturnSummary {
     pub fn update(&mut self, position: &Position) {
         // Set start timestamp if it's the first trade of the session
         if self.total.count == 0 {
+            error!("NEW TIME {}", position.meta.enter_time);
             self.time = position.meta.enter_time;
         }
 

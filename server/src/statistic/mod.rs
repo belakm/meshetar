@@ -182,7 +182,7 @@ where
             // Set Table titles using the first builder
             if index == 0 {
                 let mut titles = builder.titles();
-                titles.insert_cell(0, Cell::new(""));
+                //titles.insert_cell(0, Cell::new(""));
                 table.set_titles(titles);
             }
 

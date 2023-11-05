@@ -132,7 +132,7 @@ async fn run() -> Result<(), MainError> {
             .database(database.clone())
             .core_id(core_id.clone())
             .allocation_manager(Allocator {
-                default_order_value: 1.0,
+                default_order_value: 100.0,
             })
             .risk_manager(RiskEvaluator {})
             .starting_cash(1000.0)
@@ -174,7 +174,7 @@ async fn run() -> Result<(), MainError> {
             .build()?,
     );
 
-    let mut core = Core::builder()
+    let core = Core::builder()
         .id(core_id)
         .binance_client(BinanceClient::new().map_err(MainError::from).await?)
         .portfolio(portfolio)

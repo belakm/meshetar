@@ -224,7 +224,8 @@ impl Core {
             .await
             .get_exited_positions(self.id)
             .map(|exited_positions| {
-                &self.statistics_summary.generate_summary(&exited_positions);
+                warn!("EXITED POS {:?}", exited_positions);
+                let _ = &self.statistics_summary.generate_summary(&exited_positions);
             })
             .unwrap_or_else(|error| {
                 warn!(

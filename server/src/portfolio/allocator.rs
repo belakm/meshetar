@@ -17,6 +17,8 @@ impl Allocator {
         let default_order_size = self.default_order_value / order.market_meta.close;
         let default_order_size = (default_order_size * 10000.0).floor() / 10000.0;
 
+        info!("Default order size {}", default_order_size);
+
         match order.decision {
             // Entry
             Decision::Long => order.quantity = default_order_size * signal_strength.0,
