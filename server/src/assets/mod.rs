@@ -2,7 +2,8 @@ pub mod asset_ticker;
 pub mod backtest_ticker;
 pub mod book;
 pub mod error;
-pub mod routes;
+// pub mod routes;
+
 use self::{asset_ticker::KlineEvent, error::AssetError};
 use crate::{
     database::Database,

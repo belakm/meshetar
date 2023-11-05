@@ -11,7 +11,7 @@ use crate::{
         },
         position::{determine_position_id, Position, PositionId},
     },
-    statistic::Statistic,
+    statistic::TradingSummary,
 };
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
@@ -21,7 +21,7 @@ pub struct Database {
     open_positions: HashMap<PositionId, Position>,
     closed_positions: HashMap<String, Vec<Position>>,
     current_balances: HashMap<BalanceId, Balance>,
-    statistics: HashMap<Asset, Statistic>,
+    statistics: HashMap<Asset, TradingSummary>,
 }
 impl Database {
     pub async fn new() -> Result<Database, DatabaseError> {
@@ -237,7 +237,7 @@ impl Database {
         Ok(())
     }
 
-    fn get_exited_positions(&mut self, core_id: Uuid) -> Result<Vec<Position>, DatabaseError> {
+    pub fn get_exited_positions(&mut self, core_id: Uuid) -> Result<Vec<Position>, DatabaseError> {
         Ok(self
             .closed_positions
             .get(&determine_exited_positions_id(core_id))
@@ -287,13 +287,13 @@ impl Database {
     pub fn set_statistics(
         &mut self,
         asset: Asset,
-        statistic: Statistic,
+        statistic: TradingSummary,
     ) -> Result<(), DatabaseError> {
         self.statistics.insert(asset, statistic);
         Ok(())
     }
 
-    pub fn get_statistics(&mut self, asset: &Asset) -> Result<Statistic, DatabaseError> {
+    pub fn get_statistics(&mut self, asset: &Asset) -> Result<TradingSummary, DatabaseError> {
         self.statistics
             .get(asset)
             .copied()

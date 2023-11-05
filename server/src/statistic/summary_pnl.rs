@@ -1,10 +1,11 @@
-use super::{dispersion::Dispersion, welford_online, Config};
+use super::{dispersion::Dispersion, welford_online, StatisticConfig, TableBuilder};
 use crate::{
     assets::Side,
     portfolio::position::Position,
     utils::serde_utils::{de_duration_from_secs, se_duration_as_secs},
 };
 use chrono::{DateTime, Duration, Utc};
+use prettytable::{row, Row};
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, Default, Deserialize, Serialize)]
@@ -33,6 +34,32 @@ impl DataSummary {
     }
 }
 
+impl TableBuilder for DataSummary {
+    fn titles(&self) -> Row {
+        row![
+            "Count",
+            "Sum",
+            "Mean",
+            "Variance",
+            "Std. Dev",
+            "Range High",
+            "Range Low",
+        ]
+    }
+
+    fn row(&self) -> Row {
+        row![
+            self.count,
+            format!("{:.3}", self.sum),
+            format!("{:.3}", self.mean),
+            format!("{:.3}", self.dispersion.variance),
+            format!("{:.3}", self.dispersion.std_dev),
+            format!("{:.3}", self.dispersion.range.high),
+            format!("{:.3}", self.dispersion.range.low),
+        ]
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
 pub struct PnLReturnSummary {
     pub time: DateTime<Utc>,
@@ -44,6 +71,39 @@ pub struct PnLReturnSummary {
     pub trades_per_day: f64,
     pub total: DataSummary,
     pub losses: DataSummary,
+}
+
+impl TableBuilder for PnLReturnSummary {
+    fn titles(&self) -> Row {
+        row![
+            "Trades",
+            "Wins",
+            "Losses",
+            "Trading Days",
+            "Trades Per Day",
+            "Mean Return",
+            "Std. Dev. Return",
+            "Loss Mean Return",
+            "Biggest Win",
+            "Biggest Loss",
+        ]
+    }
+
+    fn row(&self) -> Row {
+        let wins = self.total.count - self.losses.count;
+        row![
+            self.total.count.to_string(),
+            wins,
+            self.losses.count,
+            self.duration.num_days().to_string(),
+            format!("{:.3}", self.trades_per_day),
+            format!("{:.3}", self.total.mean),
+            format!("{:.3}", self.total.dispersion.std_dev),
+            format!("{:.3}", self.losses.mean),
+            format!("{:.3}", self.total.dispersion.range.high),
+            format!("{:.3}", self.total.dispersion.range.low),
+        ]
+    }
 }
 
 impl Default for PnLReturnSummary {
@@ -86,7 +146,7 @@ impl PnLReturnSummary {
             / (self.duration.num_seconds() as f64 / PnLReturnSummary::SECONDS_IN_DAY)
     }
 
-    pub fn init(_: Config) -> Self {
+    pub fn init(_: StatisticConfig) -> Self {
         Self::default()
     }
 
@@ -110,6 +170,8 @@ impl PnLReturnSummary {
         if pnl_return.is_sign_negative() {
             self.losses.update(pnl_return);
         }
+
+        info!("UPDATING SUMMARY {:?}", &self);
     }
 }
 
@@ -148,5 +210,35 @@ impl ProfitLossSummary {
 
     pub fn new() -> Self {
         Self::default()
+    }
+}
+
+impl TableBuilder for ProfitLossSummary {
+    fn titles(&self) -> Row {
+        row![
+            "Long Contracts",
+            "Long PnL",
+            "Long PnL Per Contract",
+            "Short Contracts",
+            "Short PnL",
+            "Short PnL Per Contract",
+            "Total Contracts",
+            "Total PnL",
+            "Total PnL Per Contract",
+        ]
+    }
+
+    fn row(&self) -> Row {
+        row![
+            format!("{:.3}", self.long_contracts),
+            format!("{:.3}", self.long_pnl),
+            format!("{:.3}", self.long_pnl_per_contract),
+            format!("{:.3}", self.short_contracts),
+            format!("{:.3}", self.short_pnl),
+            format!("{:.3}", self.short_pnl_per_contract),
+            format!("{:.3}", self.total_contracts),
+            format!("{:.3}", self.total_pnl),
+            format!("{:.3}", self.total_pnl_per_contract),
+        ]
     }
 }

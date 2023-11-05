@@ -69,7 +69,6 @@ impl Position {
     }
     pub fn calculate_realised_profit_loss(&self) -> f64 {
         let total_fees = self.enter_fees_total + self.exit_fees_total;
-
         match self.side {
             Side::Buy => self.exit_value_gross - self.enter_value_gross - total_fees,
             Side::Sell => self.enter_value_gross - self.exit_value_gross - total_fees,

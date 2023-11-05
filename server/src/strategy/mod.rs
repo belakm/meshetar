@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 pub mod error;
 pub mod prediction_model;
-pub mod routes;
+// pub mod routes;
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct Signal {

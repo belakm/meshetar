@@ -37,6 +37,13 @@ impl SharpeRatio {
     pub fn trades_per_day(&self) -> f64 {
         self.trades_per_day
     }
+
+    pub fn daily(&self) -> f64 {
+        calculate_daily(self.ratio(), self.trades_per_day())
+    }
+    pub fn annual(&self, trading_days: u32) -> f64 {
+        calculate_annual(self.ratio(), self.trades_per_day(), trading_days)
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
@@ -76,6 +83,13 @@ impl SortinoRatio {
             }
         };
     }
+
+    pub fn daily(&self) -> f64 {
+        calculate_daily(self.ratio(), self.trades_per_day())
+    }
+    pub fn annual(&self, trading_days: u32) -> f64 {
+        calculate_annual(self.ratio(), self.trades_per_day(), trading_days)
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
@@ -111,6 +125,13 @@ impl CalmarRatio {
             true => 0.0,
             false => (pnl_returns.total.mean - self.risk_free_return) / max_drawdown.abs(),
         };
+    }
+
+    pub fn daily(&self) -> f64 {
+        calculate_daily(self.ratio(), self.trades_per_day())
+    }
+    pub fn annual(&self, trading_days: u32) -> f64 {
+        calculate_annual(self.ratio(), self.trades_per_day(), trading_days)
     }
 }
 

@@ -101,6 +101,17 @@ impl Trader {
                                 return Err(TraderError::from(e));
                             }
                         }
+
+                        if let Some(position_update) = self
+                            .portfolio
+                            .lock()
+                            .await
+                            .update_from_market(market_event)
+                            .await?
+                        {
+                            self.event_transmitter
+                                .send(Event::PositionUpdate(position_update));
+                        }
                     }
                     Event::Signal(signal) => {
                         match self.portfolio.lock().await.generate_order(&signal).await {

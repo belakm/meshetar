@@ -92,7 +92,6 @@ pub async fn core_events_listener(
         match event {
             Event::Market(ev) => match ev.detail {
                 MarketEventDetail::Candle(candle) => {
-                    info!("New candle.");
                     if is_live {
                         let mut database = database.lock().await;
                         let candles: Vec<Candle> = vec![candle];
@@ -103,9 +102,9 @@ pub async fn core_events_listener(
                         }
                     }
                 }
-                _ => info!("{:?}", ev),
+                _ => (), //info!("{:?}", ev),
             },
-            _ => info!("{:?}", event),
+            _ => (), // info!("{:?}", event),
         }
     }
 }

@@ -24,6 +24,7 @@ use rocket::{
     http::Status,
     Error as RocketError, Request, Response,
 };
+use statistic::{StatisticConfig, TradingSummary};
 use std::{collections::HashMap, sync::Arc};
 use strategy::Strategy;
 use thiserror::Error;
@@ -134,8 +135,15 @@ async fn run() -> Result<(), MainError> {
                 default_order_value: 1.0,
             })
             .risk_manager(RiskEvaluator {})
+            .starting_cash(1000.0)
+            .assets(vec![Asset::BTCUSDT])
+            .statistic_config(StatisticConfig {
+                starting_equity: 1000.0,
+                trading_days_per_year: 365,
+                risk_free_return: 0.0,
+            })
             .build()
-            .map_err(MainError::from)?,
+            .await?,
     ));
 
     let mut traders = Vec::new();
@@ -174,6 +182,11 @@ async fn run() -> Result<(), MainError> {
         .command_transmitters(command_transmitters)
         .traders(traders)
         .database(database.clone())
+        .statistics_summary(TradingSummary::init(StatisticConfig {
+            starting_equity: 1000.0,
+            trading_days_per_year: 365,
+            risk_free_return: 0.0,
+        }))
         .build()?;
 
     let listener_task = tokio::spawn(core_events_listener(event_receiver, database, IS_LIVE));

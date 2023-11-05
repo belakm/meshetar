@@ -1,9 +1,13 @@
 use crate::portfolio::position::Position;
 
-use super::metric::{
-    drawdown::{AvgDrawdown, Drawdown, MaxDrawdown},
-    EquityPoint,
+use super::{
+    metric::{
+        drawdown::{AvgDrawdown, Drawdown, MaxDrawdown},
+        EquityPoint,
+    },
+    TableBuilder,
 };
+use prettytable::{row, Row};
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
@@ -33,5 +37,25 @@ impl DrawdownSummary {
             avg_drawdown: AvgDrawdown::init(),
             max_drawdown: MaxDrawdown::init(),
         }
+    }
+}
+
+impl TableBuilder for DrawdownSummary {
+    fn titles(&self) -> Row {
+        row![
+            "Max Drawdown",
+            "Max Drawdown Days",
+            "Avg. Drawdown",
+            "Avg. Drawdown Days",
+        ]
+    }
+
+    fn row(&self) -> Row {
+        row![
+            format!("{:.3}", self.max_drawdown.drawdown.drawdown),
+            self.max_drawdown.drawdown.duration.num_days().to_string(),
+            format!("{:.3}", self.avg_drawdown.mean_drawdown),
+            self.avg_drawdown.mean_duration.num_days().to_string(),
+        ]
     }
 }
