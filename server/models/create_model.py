@@ -14,17 +14,19 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder, RobustScaler
 from sklearn.metrics import roc_curve, roc_auc_score, RocCurveDisplay, confusion_matrix
 from sklearn.model_selection import train_test_split
 import pickle
-
+import warnings
+import os
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 50)
+while not os.path.basename(os.getcwd()) == 'meshetar':
+    os.chdir('..')  # Move up one directory
+
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+
 
 # %%
-import os
-print(os.path.abspath('./database.sqlite'))
 conn = sqlite3.connect('./database.sqlite')
 # cursor = sqliteConnection.cursor()
-
-# %%
 query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
                 open,
                  high, 
@@ -47,13 +49,16 @@ klines = add_all_ta_features(klines,
                              high = "high",
                              fillna=True).dropna()
 # %%
-peaks, _ = find_peaks(klines["close"], distance = 12)
+one_percent_of_klines = klines.shape[0]*0.01
+peaks, _ = find_peaks(klines["close"], 
+                      distance = one_percent_of_klines)
+peaks = np.append(peaks, peaks + 1)
+
 klines["close"] = klines["close"].astype(float)
-valleys, _ = find_peaks(-klines["close"], distance  = 12)
-# plt.plot( klines["close"])
-# plt.plot(peaks, klines["close"][peaks], "x", color = "green")
-# plt.plot(valleys, klines["close"][valleys], "+", color = "red")
-# plt.show()
+valleys, _ = find_peaks(-klines["close"], 
+                         distance = one_percent_of_klines)
+valleys = np.append(valleys, valleys + 1)
+
 
 # %%
 klines["signal"] = "hold"
@@ -61,7 +66,6 @@ klines.loc[valleys, 'signal'] = "buy"
 klines.loc[peaks, 'signal'] = "sell"
 
 # %%
-
 columns_not_to_predict = [
     'open_time', 
     'open',
@@ -72,22 +76,27 @@ columns_not_to_predict = [
     'signal']
 klines_to_predict = klines.drop(columns=columns_not_to_predict)
 # %%
+# lags = range(1, 3)
 
-lags = range(1, 15)
-klines_to_predict.assign(**{
-    f'{col} (t-{lag})': klines_to_predict[col].shift(lag)
-    for lag in lags
-    for col in klines_to_predict
-})
+# klines_to_predict= pd.concat([
+#     klines_to_predict.assign(**{f'{col} (t-{lag})': klines_to_predict[col].shift(lag)})
+#     for lag in lags
+#     for col in klines_to_predict
+# ], axis=1)
+
 # %%
-X_train , X_test, y_train , y_test = train_test_split(klines_to_predict, klines[['signal']], test_size=0.2, random_state=44)
+X_train , X_test, y_train , y_test = train_test_split(
+    klines_to_predict, 
+    klines[['signal']], 
+    test_size=0.2,  
+    shuffle=False)
 # %%
 # y_train['target'] = y_train['signal'].idxmax(axis = 0)
 # y_test['target'] = y_test.idxmax(axis=0)
 # %%
 label_encoder = LabelEncoder()
-y_train['target_encoded'] = label_encoder.fit_transform(y_train)
-y_test['target_encoded'] = label_encoder.transform(y_test)
+y_train['target_encoded'] = label_encoder.fit_transform(y_train.values.ravel())
+y_test['target_encoded'] = label_encoder.transform(y_test.values.ravel())
 # %%
 scaler = RobustScaler()
 X_train = scaler.fit_transform(X_train)
@@ -101,9 +110,9 @@ scheduler = LearningRateScheduler(schedule)
 #%%
 model = tf.keras.Sequential([
     tf.keras.layers.Input(shape=(X_train.shape[1],)),
-    tf.keras.layers.Dense(X_train.shape[1]*2, activation='relu'),
-    tf.keras.layers.Dense(X_train.shape[1], activation='relu'),
-    tf.keras.layers.Dense(X_train.shape[1]/2, activation='relu'),
+    tf.keras.layers.Dense(256, activation='relu'),
+    tf.keras.layers.Dense(164, activation='relu'),
+    tf.keras.layers.Dense(32, activation='relu'),
     tf.keras.layers.Dense(len(label_encoder.classes_), activation='softmax')
 ])
 model.summary()
@@ -122,8 +131,10 @@ sample_weights = np.exp(-decay_rate * (len(y_train) - y_train.index))
 # plt.plot(sample_weights)
 #%%
 history = model.fit(
-    X_train, y_train['target_encoded'],
-    epochs=1000, batch_size=86,
+    X_train, 
+    y_train['target_encoded'],
+    epochs=100, 
+    batch_size=86,
     validation_data=(X_test, y_test['target_encoded']),
     callbacks=[scheduler],
     sample_weight=sample_weights,
@@ -140,16 +151,16 @@ test_proba = model.predict(X_test)
 cutoffs = []  # Create an empty list to store the cutoffs
 for class_index in range(len(label_encoder.classes_)):
     fpr_train, tpr_train, thresholds_train = roc_curve(y_train['target_encoded'] == class_index, train_proba[:, class_index])
-    roc = RocCurveDisplay.from_predictions(y_train['target_encoded'] == class_index, train_proba[:, class_index])
-    roc.plot()
-    plt.title(f"Train roc for class: {class_index}")
-    plt.show()
+    # roc = RocCurveDisplay.from_predictions(y_train['target_encoded'] == class_index, train_proba[:, class_index])
+    # roc.plot()
+    # plt.title(f"Train roc for class: {class_index}")
+    # plt.show()
 
     fpr_test, tpr_test, thresholds_test = roc_curve(y_test['target_encoded'] == class_index, test_proba[:, class_index])
-    roc = RocCurveDisplay.from_predictions(y_test['target_encoded'] == class_index, test_proba[:, class_index])
-    roc.plot()
-    plt.title(f"Test roc for class: {class_index}")
-    plt.show()
+    # roc = RocCurveDisplay.from_predictions(y_test['target_encoded'] == class_index, test_proba[:, class_index])
+    # roc.plot()
+    # plt.title(f"Test roc for class: {class_index}")
+    # plt.show()
 
     optimal_cutoff_index = np.argmax(tpr_train - fpr_train)
     optimal_cutoff = thresholds_train[optimal_cutoff_index]
@@ -160,7 +171,7 @@ for class_index in range(len(label_encoder.classes_)):
     y_test[f'model_prediction_V{class_index+1}'] = list(zip(*test_proba))[class_index] > optimal_cutoff
 
 # %%
-with open('./models/cutoffs.pickle', 'wb') as handle:
+with open('server/models/cutoffs.pickle', 'wb') as handle:
     pickle.dump(cutoffs, handle, protocol=-1)
 
 # %%
@@ -176,21 +187,90 @@ y_test['model_prediction'] = y_test.apply(set_model_prediction, axis=1).astype(s
 
 # %%
 conf_matrix = confusion_matrix(y_train['signal'], y_train['model_prediction'], labels=label_encoder.classes_)
-plt.figure(figsize=(8, 6))
-sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=label_encoder.classes_, yticklabels=label_encoder.classes_)
-plt.xlabel('Model Prediction')
-plt.ylabel('Actual Target')
-plt.title('Confusion Matrix train')
-plt.show()
+# plt.figure(figsize=(8, 6))
+# sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=label_encoder.classes_, yticklabels=label_encoder.classes_)
+# plt.xlabel('Model Prediction')
+# plt.ylabel('Actual Target')
+# plt.title('Confusion Matrix train')
+# plt.show()
 # %%
 conf_matrix = confusion_matrix(y_test['signal'], y_test['model_prediction'], labels=label_encoder.classes_)
-plt.figure(figsize=(8, 6))
-sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=label_encoder.classes_, yticklabels=label_encoder.classes_)
-plt.xlabel('Model Prediction')
-plt.ylabel('Actual Target')
-plt.title('Confusion Matrix test')
-plt.show()
-
-model.save("./models/neural_net_model")
+# plt.figure(figsize=(8, 6))
+# sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=label_encoder.classes_, yticklabels=label_encoder.classes_)
+# plt.xlabel('Model Prediction')
+# plt.ylabel('Actual Target')
+# plt.title('Confusion Matrix test')
+# plt.show()
 
 # %%
+model.save("server/models/neural_net_model")
+
+# %%
+test_set_close = klines.loc[y_test.index, 'close']
+
+plt.plot(test_set_close, label='Actual Close Prices', color='blue')
+plt.plot(test_set_close.index[y_test['model_prediction'] == "buy"], 
+         test_set_close[y_test['model_prediction'] == "buy"],
+         'go', label='Buy', markersize=3)
+plt.plot(test_set_close.index[y_test['model_prediction'] == "sell"], 
+         test_set_close[y_test['model_prediction'] == "sell"],
+         'ro', label='sell', markersize=3)
+plt.title('Buy and Sell Predictions vs. Actual Close Prices')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+plt.plot( klines["close"])
+plt.plot(peaks, klines["close"][peaks], "x", color = "red")
+plt.plot(valleys, klines["close"][valleys], "+", color = "green")
+plt.savefig('historic_signals.svg', format='svg')
+
+
+# %%
+# Backtesting
+back_test = pd.DataFrame(
+    {'close': test_set_close, 
+     'returns' : np.log(test_set_close/test_set_close.shift(1)),
+     'predicted_signal':  y_test['model_prediction']})
+back_test = back_test.reset_index()
+
+back_test['position'] = back_test['predicted_signal'].replace(to_replace="hold", method='ffill')
+back_test['position'] = back_test['position'].shift(1)
+# Create an initial balance (starting balance)
+initial_balance = 1000
+back_test.at[0, 'balance'] = initial_balance
+back_test
+# %%
+current_stake = 0
+current_balance = initial_balance
+
+for index, row in back_test.iterrows():
+    if row['position'] == 'buy' and current_balance == 0:
+        back_test.at[index, 'balance'] = 0
+        continue
+    elif row['position'] == 'buy' and current_balance != 0:
+        back_test.at[index, 'balance'] = 0
+        current_stake = current_balance
+        current_balance = 0
+        close_price_at_buy = back_test.at[index - 1, 'close']
+    elif row['position'] == 'sell' and current_stake == 0:
+        back_test.at[index, 'balance'] = current_balance
+        continue
+    elif row['position'] == 'sell' and current_stake != 0:
+        if index + 1 < len(back_test) and current_stake != 0:
+            current_stake = row['close']-close_price_at_buy + current_stake
+            back_test.at[index, 'balance'] = current_stake
+            current_balance = current_stake
+            current_stake = 0
+
+back_test.head(15)
+# %%
+last_nonzero = back_test[back_test['balance']!= 0].iloc[-1]['balance']
+balance_difference = last_nonzero - back_test['balance'].iloc[0] 
+pct_change = (last_nonzero/initial_balance)*100
+f"From {initial_balance}€ returns were: {balance_difference:.1f}, which is {pct_change:.3f}%"
+
+# %%
+buy_and_sell_scenario = back_test['close'].iloc[-1] - back_test['close'].iloc[0]
+f"If we would buy and sell over complete time, change is {buy_and_sell_scenario:.1f}€"
+
