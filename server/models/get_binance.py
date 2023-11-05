@@ -6,11 +6,11 @@ import time
 import toml
 import sqlite3
 import os
-while not os.path.basename(os.getcwd()) == 'meshetar':
+while not os.path.basename(os.getcwd()) == 'server':
     os.chdir('..')  # Move up one directory
 #%%
 # Read and parse the TOML configuration file
-config = toml.load('server/config.toml')
+config = toml.load('./config.toml')
 client =  binance.Client(config["binance_api_key"],
                 config["binance_api_secret"],
                 testnet=True)

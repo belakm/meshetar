@@ -18,7 +18,7 @@ import warnings
 import os
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 50)
-while not os.path.basename(os.getcwd()) == 'meshetar':
+while not os.path.basename(os.getcwd()) == 'server':
     os.chdir('..')  # Move up one directory
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -171,7 +171,7 @@ for class_index in range(len(label_encoder.classes_)):
     y_test[f'model_prediction_V{class_index+1}'] = list(zip(*test_proba))[class_index] > optimal_cutoff
 
 # %%
-with open('server/models/cutoffs.pickle', 'wb') as handle:
+with open('./models/cutoffs.pickle', 'wb') as handle:
     pickle.dump(cutoffs, handle, protocol=-1)
 
 # %%
@@ -203,7 +203,7 @@ conf_matrix = confusion_matrix(y_test['signal'], y_test['model_prediction'], lab
 # plt.show()
 
 # %%
-model.save("server/models/neural_net_model")
+model.save("./models/neural_net_model")
 
 # %%
 test_set_close = klines.loc[y_test.index, 'close']
@@ -223,7 +223,7 @@ plt.show()
 plt.plot( klines["close"])
 plt.plot(peaks, klines["close"][peaks], "x", color = "red")
 plt.plot(valleys, klines["close"][valleys], "+", color = "green")
-plt.savefig('historic_signals.svg', format='svg')
+plt.savefig('./static/historic_signals.svg', format='svg')
 
 
 # %%
@@ -268,13 +268,14 @@ last_nonzero
 
 # %%
 buy_and_sell_scenario = back_test['close'].iloc[-1] - back_test['close'].iloc[0]
-f"If we would buy and sell after complete backtest period, change is {buy_and_sell_scenario:.1f}€"# %%
+print(f"If we would buy and sell after complete backtest period, change is {buy_and_sell_scenario:.1f}€")
+
 # %%
-f"""Starting close price: {back_test['close'].iloc[0]:.1f}€,
-    Ending close price: {back_test['close'].iloc[-1]:.1f}€"""
+print(f"""Starting close price: {back_test['close'].iloc[0]:.1f}€,
+    Ending close price: {back_test['close'].iloc[-1]:.1f}€""")
 # %%
 last_nonzero = back_test[back_test['balance']!= 0].iloc[-1]['balance']
 balance_difference = last_nonzero - back_test['balance'].iloc[0] 
 pct_change = (last_nonzero/initial_balance)*100
-f"From {initial_balance}€, final balance is: {last_nonzero:.0f}€, which is {pct_change:.3f}%"
+print(f"From {initial_balance}€, final balance is: {last_nonzero:.0f}€, which is {pct_change:.3f}%")
 # %%
