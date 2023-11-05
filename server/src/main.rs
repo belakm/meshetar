@@ -9,7 +9,7 @@ mod trading;
 mod utils;
 
 use assets::{error::AssetError, Asset, MarketFeed};
-use core::{error::CoreError, Command, Core};
+use crate::core::{error::CoreError, Command, Core};
 use database::{error::DatabaseError, Database};
 use env_logger::Builder;
 use events::{core_events_listener, EventTx};

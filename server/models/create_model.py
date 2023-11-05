@@ -263,14 +263,18 @@ for index, row in back_test.iterrows():
             current_balance = current_stake
             current_stake = 0
 
-back_test.head(15)
+last_nonzero = back_test[back_test['balance']!= 0].iloc[-1]['balance']
+last_nonzero
+
+# %%
+buy_and_sell_scenario = back_test['close'].iloc[-1] - back_test['close'].iloc[0]
+f"If we would buy and sell after complete backtest period, change is {buy_and_sell_scenario:.1f}€"# %%
+# %%
+f"""Starting close price: {back_test['close'].iloc[0]:.1f}€,
+    Ending close price: {back_test['close'].iloc[-1]:.1f}€"""
 # %%
 last_nonzero = back_test[back_test['balance']!= 0].iloc[-1]['balance']
 balance_difference = last_nonzero - back_test['balance'].iloc[0] 
 pct_change = (last_nonzero/initial_balance)*100
-f"From {initial_balance}€ returns were: {balance_difference:.1f}, which is {pct_change:.3f}%"
-
+f"From {initial_balance}€, final balance is: {last_nonzero:.0f}€, which is {pct_change:.3f}%"
 # %%
-buy_and_sell_scenario = back_test['close'].iloc[-1] - back_test['close'].iloc[0]
-f"If we would buy and sell over complete time, change is {buy_and_sell_scenario:.1f}€"
-
