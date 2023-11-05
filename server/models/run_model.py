@@ -27,14 +27,13 @@ def run(candle_time=None):
     volume
     FROM candles
     WHERE asset = 'BTCUSDT'
+    AND volume > 0
     {time_query}
     ORDER BY open_time DESC
     LIMIT 50;"""
-
-    klines = pd.read_sql_query(query, conn)
     
-    print(klines.loc[0, 'open_time'])
-
+    klines = pd.read_sql_query(query, conn)
+   
     # Make predictions using the loaded model
     klines = add_all_ta_features(klines,
                                  open = "open", 
@@ -42,7 +41,7 @@ def run(candle_time=None):
                                  volume = "volume",
                                  low = "low",
                                  high = "high",
-                                 fillna=True).dropna()
+                                 fillna=True)
     
     columns_not_to_predict = [
         'open_time', 
@@ -52,7 +51,6 @@ def run(candle_time=None):
         'high', 
         'volume']
     klines_to_predict = klines.drop(columns=columns_not_to_predict)
-    
     lags = range(1, 15)
     klines_to_predict.assign(**{
         f'{col} (t-{lag})': klines_to_predict[col].shift(lag)
@@ -78,7 +76,6 @@ def run(candle_time=None):
         else:
             return "hold"
     result = set_model_prediction(cut_predictions.iloc[-1])
-    print(result)
     return result
 
 # %%

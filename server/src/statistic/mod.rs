@@ -8,7 +8,7 @@ pub mod welford_online;
 use self::{
     metric::ratio::{CalmarRatio, SharpeRatio, SortinoRatio},
     summary_drawdown::DrawdownSummary,
-    summary_pnl::PnLReturnSummary,
+    summary_pnl::{PnLReturnSummary, ProfitLossSummary},
 };
 use crate::portfolio::position::Position;
 use chrono::{DateTime, Duration, Utc};
@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
 pub struct TradingSummary {
     pub pnl_returns: PnLReturnSummary,
+    pub pnl: ProfitLossSummary,
     pub drawdown: DrawdownSummary,
     pub tear_sheet: TearSheet,
 }
@@ -26,6 +27,7 @@ impl TradingSummary {
     pub fn init(config: StatisticConfig) -> Self {
         Self {
             pnl_returns: PnLReturnSummary::new(),
+            pnl: ProfitLossSummary::new(),
             drawdown: DrawdownSummary::new(config.starting_equity),
             tear_sheet: TearSheet::new(config.risk_free_return),
         }
@@ -34,6 +36,7 @@ impl TradingSummary {
         self.pnl_returns.update(position);
         self.drawdown.update(position);
         self.tear_sheet.update(&self.pnl_returns, &self.drawdown);
+        self.pnl.update(position);
     }
     pub fn generate_summary(&mut self, positions: &[Position]) {
         for position in positions.iter() {
@@ -58,6 +61,10 @@ impl TableBuilder for TradingSummary {
             titles.push(title.clone())
         }
 
+        for title in &self.pnl.titles() {
+            titles.push(title.clone())
+        }
+
         Row::new(titles)
     }
 
@@ -73,6 +80,10 @@ impl TableBuilder for TradingSummary {
         }
 
         for cell in &self.drawdown.row() {
+            cells.push(cell.clone())
+        }
+
+        for cell in &self.pnl.row() {
             cells.push(cell.clone())
         }
 
@@ -181,7 +192,7 @@ where
         .fold(Table::new(), |mut table, (index, (id, builder))| {
             // Set Table titles using the first builder
             if index == 0 {
-                let mut titles = builder.titles();
+                let titles = builder.titles();
                 //titles.insert_cell(0, Cell::new(""));
                 table.set_titles(titles);
             }

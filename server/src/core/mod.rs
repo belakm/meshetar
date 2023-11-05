@@ -84,8 +84,10 @@ impl Core {
                 }
             }
         }
+
         let mut out = File::create("summary.html").unwrap();
         let _print_statistics = self.generate_session_summary().await?.print_html(&mut out);
+
         Ok(())
     }
     async fn fetch_history(&mut self) -> mpsc::Receiver<bool> {
@@ -98,7 +100,7 @@ impl Core {
         let handles = assets.into_iter().map(move |asset| {
             (
                 asset.clone(),
-                fetch_candles(Duration::days(1), asset.clone(), binance_client.clone()),
+                fetch_candles(Duration::days(30), asset.clone(), binance_client.clone()),
             )
         });
         let (notify_transmitter, notify_receiver) = mpsc::channel(1);
@@ -202,10 +204,10 @@ impl Core {
                         Ok(statistics) => Some((asset, statistics)),
                         Err(error) => {
                             error!(
-                    ?error,
-                    ?asset,
-                    "failed to get Market statistics when generating trading session summary"
-                );
+                                ?error,
+                                ?asset,
+                                "failed to get Market statistics when generating trading session summary"
+                            );
                             None
                         }
                     }
@@ -218,13 +220,15 @@ impl Core {
                 stats_per_market.push(result);
             }
         }
+
+        let mut database = self.database.lock().await;
+        let final_balance = database.get_balance(self.id).ok();
+        error!("FINAL BALANCE: {:?}", final_balance);
         // Generate average statistics across all markets using session's exited Positions
-        self.database
-            .lock()
-            .await
+        database
             .get_exited_positions(self.id)
             .map(|exited_positions| {
-                warn!("EXITED POS {:?}", exited_positions);
+                warn!("exited positions {:?}", exited_positions);
                 let _ = &self.statistics_summary.generate_summary(&exited_positions);
             })
             .unwrap_or_else(|error| {

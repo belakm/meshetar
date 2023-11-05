@@ -17,7 +17,7 @@ pub async fn new_ticker(
         .fetch_all_candles(asset.clone())
         .await?;
     tokio::spawn(async move {
-        let mut candles = candles.iter();
+        let mut candles = candles.iter().skip(candles.len() - 1490);
         while let Some(candle) = candles.next() {
             let _ = tx.send(MarketEvent {
                 time: candle.close_time,

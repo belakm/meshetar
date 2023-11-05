@@ -29,7 +29,6 @@ impl Execution {
         Execution {}
     }
     pub fn generate_fill(&self, order: &OrderEvent) -> Result<FillEvent, TraderError> {
-        info!("GENERATE FILL {:?}", order);
         Ok(FillEvent {
             time: Utc::now(),
             asset: order.asset.clone(),

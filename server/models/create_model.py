@@ -18,13 +18,15 @@ import warnings
 import os
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 50)
-while not os.path.basename(os.getcwd()) == 'meshetar':
-    os.chdir('..')  # Move up one directory
+#while not os.path.basename(os.getcwd()) == 'meshetar/server':
+#    os.chdir('..')  # Move up one directory
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 # %%
+#import os
+#print(os.path.abspath('./database.sqlite'))
 conn = sqlite3.connect('./database.sqlite')
 # cursor = sqliteConnection.cursor()
 query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
@@ -171,7 +173,7 @@ for class_index in range(len(label_encoder.classes_)):
     y_test[f'model_prediction_V{class_index+1}'] = list(zip(*test_proba))[class_index] > optimal_cutoff
 
 # %%
-with open('server/models/cutoffs.pickle', 'wb') as handle:
+with open('models/cutoffs.pickle', 'wb') as handle:
     pickle.dump(cutoffs, handle, protocol=-1)
 
 # %%
@@ -203,7 +205,7 @@ conf_matrix = confusion_matrix(y_test['signal'], y_test['model_prediction'], lab
 # plt.show()
 
 # %%
-model.save("server/models/neural_net_model")
+model.save("models/neural_net_model")
 
 # %%
 test_set_close = klines.loc[y_test.index, 'close']

@@ -109,10 +109,7 @@ impl Portfolio {
             .lock()
             .await
             .get_balance(self.core_id)
-            .map(|balance| {
-                info!("balance {:?}", &balance);
-                Ok(balance.available == 0.0)
-            })
+            .map(|balance| Ok(balance.available == 0.0))
             .map_err(PortfolioError::RepositoryInteraction)?;
         res
     }

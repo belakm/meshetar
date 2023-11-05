@@ -92,12 +92,12 @@ fn generate_signals_map(model_output: &str) -> HashMap<Decision, SignalStrength>
     let mut signals = HashMap::with_capacity(4);
     match model_output {
         "sell" => {
-            signals.insert(Decision::Short, SignalStrength(1.0));
+            // signals.insert(Decision::Short, SignalStrength(1.0));
             signals.insert(Decision::CloseLong, SignalStrength(1.0));
         }
         "buy" => {
             signals.insert(Decision::Long, SignalStrength(1.0));
-            signals.insert(Decision::CloseShort, SignalStrength(1.0));
+            // signals.insert(Decision::CloseShort, SignalStrength(1.0));
         }
         _ => (),
     };
