@@ -1,4 +1,5 @@
 #%%
+print(1)
 import tensorflow as tf
 import sqlite3
 import pandas as pd
@@ -6,14 +7,17 @@ from ta import add_all_ta_features
 import warnings
 import pickle
 from sklearn.preprocessing import RobustScaler
-
-
+import os
+while not os.path.basename(os.getcwd()) == 'meshetar':
+    os.chdir('..')  # Move up one directory
+print(os.getcwd())
 def run():
     # Comment out the warning silencers below when developing:
     warnings.simplefilter(action='ignore', category=FutureWarning)
     warnings.simplefilter("ignore", category=RuntimeWarning)
     # Load the saved model
-    loaded_model = tf.keras.models.load_model("./models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
+    loaded_model = tf.keras.models.load_model("./server/models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
+    
     conn = sqlite3.connect('./database.sqlite')
     # cursor = sqliteConnection.cursor()
     query = """
@@ -27,7 +31,7 @@ def run():
     WHERE asset = 'BTCUSDT'
     ORDER BY open_time DESC
     LIMIT 50;"""
-
+    
     klines = pd.read_sql_query(query, conn)
     # Make predictions using the loaded model
     klines = add_all_ta_features(klines,
@@ -47,17 +51,18 @@ def run():
         'volume']
     klines_to_predict = klines.drop(columns=columns_not_to_predict)
     
-    lags = range(1, 15)
-    klines_to_predict.assign(**{
-        f'{col} (t-{lag})': klines_to_predict[col].shift(lag)
-        for lag in lags
-        for col in klines_to_predict
-    })
+    # lags = range(1, 15)
+    # klines_to_predict.assign(**{
+    #     f'{col} (t-{lag})': klines_to_predict[col].shift(lag)
+    #     for lag in lags
+    #     for col in klines_to_predict
+    # })
+    print(1)
 
     scaler = RobustScaler()
     klines_to_predict = scaler.fit_transform(klines_to_predict.astype('float32'))
     predictions = loaded_model.predict(klines_to_predict)
-    file_path = './models/cutoffs.pickle'
+    file_path = './server/models/models/cutoffs.pickle'
     with open(file_path, 'rb') as handle:
         cutoffs = pickle.load(handle)
 
@@ -74,5 +79,5 @@ def run():
     result = set_model_prediction(cut_predictions.iloc[-1])
     print(result)
     return result
-
+run()
 # %%
