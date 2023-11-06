@@ -35,6 +35,10 @@ use trading::{error::TraderError, execution::Execution, Trader};
 use utils::binance_client::{self, BinanceClient, BinanceClientError};
 use uuid::Uuid;
 
+const IS_LIVE: bool = false;
+const BACKTEST_LAST_N_CANDLES: usize = 1490;
+const FETCH_N_DAYS_HISTORY: i64 = 3;
+
 pub struct CORS;
 
 #[derive(Error, Debug)]
@@ -121,7 +125,6 @@ async fn run() -> Result<(), MainError> {
     builder.filter(None, LevelFilter::Info); // a default for other libs
     builder.filter(Some("sqlx"), LevelFilter::Warn);
     builder.init();
-    const IS_LIVE: bool = false;
     let core_id = Uuid::new_v4();
     let (event_transmitter, event_receiver) = mpsc::unbounded_channel();
     let event_transmitter = EventTx::new(event_transmitter);
@@ -155,7 +158,7 @@ async fn run() -> Result<(), MainError> {
             .await?
             .market_receiver
     } else {
-        MarketFeed::new_backtest(Asset::BTCUSDT, database.clone(), 1490)
+        MarketFeed::new_backtest(Asset::BTCUSDT, database.clone(), BACKTEST_LAST_N_CANDLES)
             .await?
             .market_receiver
     };
@@ -188,6 +191,7 @@ async fn run() -> Result<(), MainError> {
             trading_days_per_year: 365,
             risk_free_return: 0.0,
         }))
+        .n_days_history_fetch(FETCH_N_DAYS_HISTORY)
         .build()?;
 
     let listener_task = tokio::spawn(core_events_listener(event_receiver, database, IS_LIVE));

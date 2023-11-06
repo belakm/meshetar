@@ -36,6 +36,7 @@ pub struct Core {
     command_transmitters: HashMap<Asset, mpsc::Sender<Command>>,
     statistics_summary: TradingSummary,
     traders: Vec<Trader>,
+    n_days_history_fetch: i64,
 }
 
 impl Core {
@@ -47,7 +48,7 @@ impl Core {
 impl Core {
     pub async fn run(mut self) -> Result<(), CoreError> {
         info!("Core {} is starting up.", &self.id);
-        let mut fetching_stopped = self.fetch_history().await;
+        let mut fetching_stopped = self.fetch_history(self.n_days_history_fetch).await;
         loop {
             tokio::select! {
                 _ = fetching_stopped.recv() => {
@@ -91,7 +92,7 @@ impl Core {
 
         Ok(())
     }
-    async fn fetch_history(&mut self) -> mpsc::Receiver<bool> {
+    async fn fetch_history(&mut self, n_days: i64) -> mpsc::Receiver<bool> {
         let assets: Vec<Asset> = self
             .traders
             .iter()
@@ -101,7 +102,11 @@ impl Core {
         let handles = assets.into_iter().map(move |asset| {
             (
                 asset.clone(),
-                fetch_candles(Duration::days(1), asset.clone(), binance_client.clone()),
+                fetch_candles(
+                    Duration::days(n_days),
+                    asset.clone(),
+                    binance_client.clone(),
+                ),
             )
         });
         let (notify_transmitter, notify_receiver) = mpsc::channel(1);
@@ -224,7 +229,17 @@ impl Core {
 
         let mut database = self.database.lock().await;
         let final_balance = database.get_balance(self.id).ok();
-        error!("FINAL BALANCE: {:?}", final_balance);
+        let assets: Vec<Asset> = self
+            .traders
+            .iter()
+            .map(|trader| {
+                let asset = &trader.asset;
+                asset.clone().to_owned()
+            })
+            .collect();
+        let final_positions = database.get_open_positions(self.id, assets);
+        warn!("FINAL BALANCE: {:?}", final_balance);
+        warn!("FINAL POSITIONS: {:?}", final_positions);
         // Generate average statistics across all markets using session's exited Positions
         database
             .get_exited_positions(self.id)
@@ -267,6 +282,7 @@ pub struct CoreBuilder {
     command_transmitters: Option<HashMap<Asset, mpsc::Sender<Command>>>,
     traders: Option<Vec<Trader>>,
     statistics_summary: Option<TradingSummary>,
+    n_days_history_fetch: Option<i64>,
 }
 
 impl CoreBuilder {
@@ -280,6 +296,7 @@ impl CoreBuilder {
             command_transmitters: None,
             traders: None,
             statistics_summary: None,
+            n_days_history_fetch: None,
         }
     }
     pub fn id(self, id: Uuid) -> Self {
@@ -330,6 +347,13 @@ impl CoreBuilder {
             ..self
         }
     }
+    pub fn n_days_history_fetch(self, value: i64) -> Self {
+        CoreBuilder {
+            n_days_history_fetch: Some(value),
+            ..self
+        }
+    }
+
     pub fn build(self) -> Result<Core, CoreError> {
         let binance_client = self
             .binance_client
@@ -356,6 +380,9 @@ impl CoreBuilder {
             statistics_summary: self
                 .statistics_summary
                 .ok_or(CoreError::BuilderIncomplete("statistics summary"))?,
+            n_days_history_fetch: self
+                .n_days_history_fetch
+                .ok_or(CoreError::BuilderIncomplete("n_days_history_fetch"))?,
         };
         Ok(core)
     }

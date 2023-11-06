@@ -44,7 +44,6 @@ impl SignalForceExit {
 
 pub struct Trader {
     core_id: Uuid,
-    is_live: bool,
     pub asset: Asset,
     command_reciever: mpsc::Receiver<Command>,
     event_transmitter: EventTx,
@@ -162,6 +161,8 @@ impl Trader {
                 "Trader trading loop stopped"
             );
         }
+
+        info!("Trader {} shutting down.", self.asset);
         Ok(())
     }
     fn receive_remote_command(&mut self) -> Option<Command> {
@@ -287,9 +288,6 @@ impl TraderBuilder {
                 .core_id
                 .ok_or(TraderError::BuilderIncomplete("engine_id"))?,
             asset: self.asset.ok_or(TraderError::BuilderIncomplete("asset"))?,
-            is_live: self
-                .is_live
-                .ok_or(TraderError::BuilderIncomplete("is_live"))?,
             command_reciever: self
                 .command_reciever
                 .ok_or(TraderError::BuilderIncomplete("command_rx"))?,
