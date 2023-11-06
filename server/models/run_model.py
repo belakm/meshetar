@@ -7,8 +7,9 @@ import warnings
 import pickle
 from sklearn.preprocessing import RobustScaler
 import os
-while not os.path.basename(os.getcwd()) == 'meshetar':
-    os.chdir('..')  # Move up one directory
+
+# while not os.path.basename(os.getcwd()) == 'meshetar':
+#    os.chdir('..')  # Move up one directory
 
 def run(candle_time=None):
     # Comment out the warning silencers below when developing:
@@ -16,7 +17,7 @@ def run(candle_time=None):
     warnings.simplefilter("ignore", category=RuntimeWarning)
     warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
     # Load the saved model
-    loaded_model = tf.keras.models.load_model("./server/models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
+    loaded_model = tf.keras.models.load_model("./models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
     
     conn = sqlite3.connect('./database.sqlite')
     # cursor = sqliteConnection.cursor()
@@ -54,19 +55,10 @@ def run(candle_time=None):
         'high', 
         'volume']
     klines_to_predict = klines.drop(columns=columns_not_to_predict)
-
-    
-    # lags = range(1, 15)
-    # klines_to_predict.assign(**{
-    #     f'{col} (t-{lag})': klines_to_predict[col].shift(lag)
-    #     for lag in lags
-    #     for col in klines_to_predict
-    # })
-
     scaler = RobustScaler()
     klines_to_predict = scaler.fit_transform(klines_to_predict.astype('float32'))
     predictions = loaded_model.predict(klines_to_predict)
-    file_path = './server/models/models/cutoffs.pickle'
+    file_path = './models/cutoffs.pickle'
     with open(file_path, 'rb') as handle:
         cutoffs = pickle.load(handle)
 

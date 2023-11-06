@@ -1,15 +1,12 @@
-extern crate cpython;
+pub mod error;
+// pub mod routes;
 
 use self::error::StrategyError;
-use crate::assets::{Asset, MarketEvent, MarketEventDetail, MarketMeta};
+use crate::assets::{Asset, Candle, MarketEvent, MarketEventDetail, MarketMeta};
 use chrono::{DateTime, Utc};
-use cpython::{PyModule, PyResult, Python};
+use pyo3::{prelude::*, types::PyModule};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-
-pub mod error;
-pub mod prediction_model;
-// pub mod routes;
+use std::{cmp::Ordering, collections::HashMap};
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct Signal {
@@ -17,6 +14,25 @@ pub struct Signal {
     pub asset: Asset,
     pub market_meta: MarketMeta,
     pub signals: HashMap<Decision, SignalStrength>,
+}
+
+impl PartialOrd for Signal {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        // First, compare by the `time` field
+        match self.time.cmp(&other.time) {
+            Ordering::Equal => {
+                // If times are equal, compare by the `asset` field
+                match self.asset.partial_cmp(&other.asset) {
+                    Some(Ordering::Equal) => {
+                        // If assets are equal, compare by the `market_meta` field
+                        self.market_meta.partial_cmp(&other.market_meta)
+                    }
+                    other => other,
+                }
+            }
+            other => Some(other),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Deserialize, Serialize)]
@@ -62,11 +78,13 @@ impl Strategy {
         &mut self,
         market_event: &MarketEvent,
     ) -> Result<Option<Signal>, StrategyError> {
-        if let MarketEventDetail::Candle(candle) = &market_event.detail {
+        if let MarketEventDetail::BacktestCandle((_, signal)) = &market_event.detail {
+            Ok(signal.to_owned())
+        } else if let MarketEventDetail::Candle(candle) = &market_event.detail {
             // Run model
             let pyscript = include_str!("../../models/run_model.py");
             let args = (candle.open_time.to_rfc3339(),);
-            let model_output = run_python_script(pyscript, args)?;
+            let model_output = run_candle(pyscript, args)?;
             let signals = generate_signals_map(&model_output);
             if signals.len() == 0 {
                 return Ok(None);
@@ -86,6 +104,44 @@ impl Strategy {
             Ok(None)
         }
     }
+    pub async fn generate_backtest_signals(
+        open_time: DateTime<Utc>,
+        candles: Vec<Candle>,
+        asset: Asset,
+    ) -> Result<Option<Vec<Option<Signal>>>, StrategyError> {
+        let pyscript = include_str!("../../models/backtest.py");
+        let args = (open_time.to_rfc3339(),);
+        let model_output = run_backtest(pyscript, args)?;
+        let signals: Vec<HashMap<Decision, SignalStrength>> = model_output
+            .iter()
+            .map(|signal| generate_signals_map(&signal))
+            .collect();
+        if signals.len() == 0 {
+            warn!("Backtest - no signals produced, check input.");
+            return Ok(None);
+        }
+        let time = Utc::now();
+        let signals: Vec<Option<Signal>> = signals
+            .iter()
+            .enumerate()
+            .map(|(index, signal_map)| {
+                if signal_map.len() == 0 {
+                    None
+                } else {
+                    Some(Signal {
+                        time,
+                        asset: asset.clone(),
+                        market_meta: MarketMeta {
+                            close: candles.get(index).unwrap().close,
+                            time,
+                        },
+                        signals: signal_map.to_owned(),
+                    })
+                }
+            })
+            .collect();
+        Ok(Some(signals))
+    }
 }
 
 fn generate_signals_map(model_output: &str) -> HashMap<Decision, SignalStrength> {
@@ -104,14 +160,20 @@ fn generate_signals_map(model_output: &str) -> HashMap<Decision, SignalStrength>
     signals
 }
 
-fn run_python_script(script: &str, args: (String,)) -> PyResult<String> {
-    let gil = Python::acquire_gil();
-    let py = gil.python();
+fn run_candle(script: &str, args: (String,)) -> PyResult<String> {
+    let result: PyResult<String> = Python::with_gil(|py| {
+        let activators = PyModule::from_code(py, script, "activators.py", "activators")?;
+        let prediction: String = activators.getattr("run")?.call1(args)?.extract()?;
+        Ok(prediction)
+    });
+    Ok(result?)
+}
 
-    let main_module = PyModule::import(py, "__main__")?;
-    py.run(script, Some(&main_module.dict(py)), None)?;
-
-    let output: String = main_module.call(py, "run", args, None)?.extract(py)?;
-    info!("{}", output);
-    Ok(output)
+fn run_backtest(script: &str, args: (String,)) -> PyResult<Vec<String>> {
+    let result: PyResult<Vec<String>> = Python::with_gil(|py| {
+        let activators = PyModule::from_code(py, script, "activators.py", "activators")?;
+        let prediction: Vec<String> = activators.getattr("backtest")?.call1(args)?.extract()?;
+        Ok(prediction)
+    });
+    Ok(result?)
 }

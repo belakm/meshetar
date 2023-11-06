@@ -1,13 +1,11 @@
 use std::fmt;
 
-use cpython::PyErr;
+use pyo3::PyErr;
 use thiserror::Error;
 
 /// All errors generated in the barter::portfolio module.
 #[derive(Error, Debug)]
 pub enum StrategyError {
-    #[error("No signal produced")]
-    NoSignalProduced,
     #[error("Python error: {0}")]
     PythonError(PythonErrWrapper),
 }

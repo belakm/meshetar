@@ -12,4 +12,6 @@ pub enum AssetError {
     JsonSerDe(#[from] serde_json::Error),
     #[error("Database error: {0}")]
     DatabaseError(#[from] DatabaseError),
+    #[error("Amount of candles to skip should be 0 or more.")]
+    NegativeCandleNumberSkip,
 }

@@ -85,6 +85,7 @@ impl Core {
             }
         }
 
+        // File to print out the statistics
         let mut out = File::create("summary.html").unwrap();
         let _print_statistics = self.generate_session_summary().await?.print_html(&mut out);
 
@@ -100,7 +101,7 @@ impl Core {
         let handles = assets.into_iter().map(move |asset| {
             (
                 asset.clone(),
-                fetch_candles(Duration::days(30), asset.clone(), binance_client.clone()),
+                fetch_candles(Duration::days(1), asset.clone(), binance_client.clone()),
             )
         });
         let (notify_transmitter, notify_receiver) = mpsc::channel(1);
@@ -228,7 +229,6 @@ impl Core {
         database
             .get_exited_positions(self.id)
             .map(|exited_positions| {
-                warn!("exited positions {:?}", exited_positions);
                 let _ = &self.statistics_summary.generate_summary(&exited_positions);
             })
             .unwrap_or_else(|error| {

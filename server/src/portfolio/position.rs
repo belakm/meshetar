@@ -111,6 +111,7 @@ impl Position {
         let close = match &market.detail {
             MarketEventDetail::Trade(trade) => trade.price,
             MarketEventDetail::Candle(candle) => candle.close,
+            MarketEventDetail::BacktestCandle((candle, _)) => candle.close,
             MarketEventDetail::OrderBookL1(book_l1) => book_l1.volume_weighted_mid_price(),
         };
         self.meta.update_time = market.time;

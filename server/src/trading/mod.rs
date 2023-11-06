@@ -44,6 +44,7 @@ impl SignalForceExit {
 
 pub struct Trader {
     core_id: Uuid,
+    is_live: bool,
     pub asset: Asset,
     command_reciever: mpsc::Receiver<Command>,
     event_transmitter: EventTx,
@@ -72,9 +73,10 @@ impl Trader {
                 }
             }
             match self.market_feed.next() {
-                Feed::Next(asset) => {
-                    self.event_transmitter.send(Event::Market(asset.clone()));
-                    self.event_queue.push_back(Event::Market(asset));
+                Feed::Next(market_event) => {
+                    self.event_transmitter
+                        .send(Event::Market(market_event.clone()));
+                    self.event_queue.push_back(Event::Market(market_event));
                 }
                 Feed::Unhealthy => {
                     warn!(
@@ -101,7 +103,6 @@ impl Trader {
                                 return Err(TraderError::from(e));
                             }
                         }
-
                         if let Some(position_update) = self
                             .portfolio
                             .lock()
@@ -200,6 +201,7 @@ pub struct TraderBuilder {
     portfolio: Option<Arc<Mutex<Portfolio>>>,
     strategy: Option<Strategy>,
     execution: Option<Execution>,
+    is_live: Option<bool>,
 }
 impl TraderBuilder {
     pub fn new() -> TraderBuilder {
@@ -207,6 +209,7 @@ impl TraderBuilder {
             core_id: None,
             command_reciever: None,
             asset: None,
+            is_live: None,
             event_transmitter: None,
             portfolio: None,
             market_feed: None,
@@ -271,12 +274,22 @@ impl TraderBuilder {
         }
     }
 
+    pub fn is_live(self, value: bool) -> Self {
+        Self {
+            is_live: Some(value),
+            ..self
+        }
+    }
+
     pub fn build(self) -> Result<Trader, TraderError> {
         Ok(Trader {
             core_id: self
                 .core_id
                 .ok_or(TraderError::BuilderIncomplete("engine_id"))?,
-            asset: self.asset.ok_or(TraderError::BuilderIncomplete("market"))?,
+            asset: self.asset.ok_or(TraderError::BuilderIncomplete("asset"))?,
+            is_live: self
+                .is_live
+                .ok_or(TraderError::BuilderIncomplete("is_live"))?,
             command_reciever: self
                 .command_reciever
                 .ok_or(TraderError::BuilderIncomplete("command_rx"))?,

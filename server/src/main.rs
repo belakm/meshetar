@@ -155,7 +155,7 @@ async fn run() -> Result<(), MainError> {
             .await?
             .market_receiver
     } else {
-        MarketFeed::new_backtest(Asset::BTCUSDT, database.clone())
+        MarketFeed::new_backtest(Asset::BTCUSDT, database.clone(), 1490)
             .await?
             .market_receiver
     };
@@ -165,6 +165,7 @@ async fn run() -> Result<(), MainError> {
         Trader::builder()
             .core_id(core_id)
             .asset(Asset::BTCUSDT)
+            .is_live(IS_LIVE)
             .command_reciever(trader_command_receiver)
             .event_transmitter(event_transmitter)
             .portfolio(Arc::clone(&portfolio))

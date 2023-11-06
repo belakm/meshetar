@@ -1,12 +1,13 @@
 pub mod asset_ticker;
 pub mod backtest_ticker;
-pub mod book;
+// pub mod book;
 pub mod error;
 // pub mod routes;
 
 use self::{asset_ticker::KlineEvent, error::AssetError};
 use crate::{
     database::Database,
+    strategy::Signal,
     utils::{binance_client::BinanceClient, formatting::timestamp_to_dt},
 };
 use binance_spot_connector_rust::market::klines::KlineInterval;
@@ -44,6 +45,7 @@ pub enum MarketEventDetail {
     Trade(PublicTrade),
     OrderBookL1(OrderBookL1),
     Candle(Candle),
+    BacktestCandle((Candle, Option<Signal>)),
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
@@ -153,8 +155,9 @@ impl MarketFeed {
     pub async fn new_backtest(
         asset: Asset,
         database: Arc<Mutex<Database>>,
+        last_n_candles: usize,
     ) -> Result<Self, AssetError> {
-        let receiver = backtest_ticker::new_ticker(asset, database).await?;
+        let receiver = backtest_ticker::new_ticker(asset, database, last_n_candles).await?;
         Ok(Self {
             market_receiver: receiver,
         })
