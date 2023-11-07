@@ -35,7 +35,7 @@ use trading::{error::TraderError, execution::Execution, Trader};
 use utils::binance_client::{BinanceClient, BinanceClientError};
 use uuid::Uuid;
 
-const IS_LIVE: bool = true;
+const IS_LIVE: bool = false;
 const BACKTEST_LAST_N_CANDLES: usize = 1490;
 const FETCH_N_DAYS_HISTORY: i64 = 2;
 

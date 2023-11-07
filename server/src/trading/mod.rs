@@ -62,6 +62,7 @@ impl Trader {
         info!("Trader {} starting up.", self.asset);
         let _ = self.market_feed.run().await?;
         info!("Trader {} starting event loop.", self.asset);
+        let _ = tokio::time::sleep(std::time::Duration::from_millis(1)).await;
         loop {
             while let Some(command) = self.receive_remote_command() {
                 match command {
@@ -73,7 +74,7 @@ impl Trader {
                     _ => continue,
                 }
             }
-            match self.market_feed.next().await {
+            match self.market_feed.next() {
                 Feed::Next(market_event) => {
                     self.event_transmitter
                         .send(Event::Market(market_event.clone()));

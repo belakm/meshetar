@@ -141,12 +141,11 @@ pub struct MarketFeed {
     last_n_candles: usize,
 }
 impl MarketFeed {
-    pub async fn next(&mut self) -> Feed {
+    pub fn next(&mut self) -> Feed {
         if self.market_receiver.is_none() {
             return Feed::Unhealthy;
         }
         loop {
-            let _ = tokio::time::sleep(std::time::Duration::from_millis(1)).await;
             match self.market_receiver.as_mut().unwrap().try_recv() {
                 Ok(event) => break Feed::Next(event),
                 Err(mpsc::error::TryRecvError::Empty) => continue,

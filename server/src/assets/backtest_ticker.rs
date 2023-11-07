@@ -32,7 +32,6 @@ pub async fn new_ticker(
     let candles = remove_items_from_start(candles, skip_n_candles);
 
     tokio::spawn(async move {
-        info!("OLA");
         let candles_copy = candles.clone();
         let open_time = candles_copy
             .first()
