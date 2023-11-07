@@ -144,7 +144,7 @@ history = model.fit(
 #%%
 plt.plot(history.history["loss"])
 plt.plot(history.history["val_loss"])
-plt.show()
+plt.savefig('./static/nnet_history.svg', format = 'svg')
 #%%
 train_proba = model.predict(X_train)
 test_proba = model.predict(X_test)
@@ -196,12 +196,15 @@ conf_matrix = confusion_matrix(y_train['signal'], y_train['model_prediction'], l
 # plt.show()
 # %%
 conf_matrix = confusion_matrix(y_test['signal'], y_test['model_prediction'], labels=label_encoder.classes_)
-# plt.figure(figsize=(8, 6))
-# sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=label_encoder.classes_, yticklabels=label_encoder.classes_)
-# plt.xlabel('Model Prediction')
-# plt.ylabel('Actual Target')
-# plt.title('Confusion Matrix test')
-# plt.show()
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=label_encoder.classes_, yticklabels=label_encoder.classes_)
+plt.xlabel('Model Prediction')
+plt.ylabel('Actual Target')
+plt.title('Confusion Matrix test')
+plt.savefig('./static/test_conf_matrix.svg', format='svg')
+
+# Clear the current figure
+plt.clf()
 
 # %%
 model.save("./models/neural_net_model")
@@ -219,9 +222,12 @@ plt.plot(test_set_close.index[y_test['model_prediction'] == "sell"],
 plt.title('Buy and Sell Predictions vs. Actual Close Prices')
 plt.legend()
 plt.grid(True)
-plt.show()
+plt.savefig('./static/test_set_predictions.svg', format='svg')
 
-plt.plot( klines["close"])
+# Clear the current figure
+plt.clf()
+
+plt.plot(klines["close"])
 plt.plot(peaks, klines["close"][peaks], "x", color = "red")
 plt.plot(valleys, klines["close"][valleys], "+", color = "green")
 plt.savefig('./static/historic_signals.svg', format='svg')
@@ -278,5 +284,5 @@ print(f"""Starting close price: {back_test['close'].iloc[0]:.1f}€,
 last_nonzero = back_test[back_test['balance']!= 0].iloc[-1]['balance']
 balance_difference = last_nonzero - back_test['balance'].iloc[0] 
 pct_change = (last_nonzero/initial_balance)*100
-print(f"From {initial_balance}€, final balance is: {last_nonzero:.0f}€, which is {pct_change:.3f}%")
+print(f"From {initial_balance}€, using our strategy, the final balance would be: {last_nonzero:.0f}€, which is {pct_change:.3f}%")
 # %%
