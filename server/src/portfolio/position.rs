@@ -69,7 +69,6 @@ impl Position {
     }
     pub fn calculate_realised_profit_loss(&self) -> f64 {
         let total_fees = self.enter_fees_total + self.exit_fees_total;
-
         match self.side {
             Side::Buy => self.exit_value_gross - self.enter_value_gross - total_fees,
             Side::Sell => self.enter_value_gross - self.exit_value_gross - total_fees,
@@ -112,6 +111,7 @@ impl Position {
         let close = match &market.detail {
             MarketEventDetail::Trade(trade) => trade.price,
             MarketEventDetail::Candle(candle) => candle.close,
+            MarketEventDetail::BacktestCandle((candle, _)) => candle.close,
             MarketEventDetail::OrderBookL1(book_l1) => book_l1.volume_weighted_mid_price(),
         };
         self.meta.update_time = market.time;

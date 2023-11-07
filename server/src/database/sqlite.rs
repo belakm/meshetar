@@ -70,7 +70,7 @@ pub async fn setup_tables() -> Result<(), DatabaseError> {
             close REAL NOT NULL, 
             close_time INTEGER NOT NULL, 
             volume REAL NOT NULL, 
-            trades INTEGER NOT NULL,
+            trade_count INTEGER NOT NULL,
             PRIMARY KEY (open_time, asset)
         );
         CREATE TABLE IF NOT EXISTS indicators (

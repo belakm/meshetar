@@ -4,12 +4,14 @@ use crate::{
     assets::{fetch_candles, Asset},
     database::Database,
     portfolio::Portfolio,
+    statistic::TradingSummary,
     trading::Trader,
-    utils::binance_client::{self, BinanceClient},
+    utils::binance_client::BinanceClient,
 };
 use chrono::Duration;
 use error::CoreError;
-use std::{collections::HashMap, sync::Arc};
+use prettytable::Table;
+use std::{collections::HashMap, fs::File, sync::Arc};
 use tokio::sync::{
     mpsc::{self, Receiver},
     Mutex,
@@ -32,7 +34,9 @@ pub struct Core {
     binance_client: Arc<BinanceClient>,
     command_reciever: Receiver<Command>,
     command_transmitters: HashMap<Asset, mpsc::Sender<Command>>,
+    statistics_summary: TradingSummary,
     traders: Vec<Trader>,
+    n_days_history_fetch: i64,
 }
 
 impl Core {
@@ -42,9 +46,9 @@ impl Core {
 }
 
 impl Core {
-    pub async fn run(&mut self) {
+    pub async fn run(mut self) -> Result<(), CoreError> {
         info!("Core {} is starting up.", &self.id);
-        let mut fetching_stopped = self.fetch_history().await;
+        let mut fetching_stopped = self.fetch_history(self.n_days_history_fetch).await;
         loop {
             tokio::select! {
                 _ = fetching_stopped.recv() => {
@@ -81,8 +85,18 @@ impl Core {
                 }
             }
         }
+
+        // File to print out the statistics
+        let mut out = File::create("summary.html").unwrap();
+        let _print_statistics = self.generate_session_summary().await?;
+        _print_statistics.iter().for_each(|table| {
+            let _ = table.print_html(&mut out);
+            let _ = table.printstd();
+        });
+
+        Ok(())
     }
-    async fn fetch_history(&mut self) -> mpsc::Receiver<bool> {
+    async fn fetch_history(&mut self, n_days: i64) -> mpsc::Receiver<bool> {
         let assets: Vec<Asset> = self
             .traders
             .iter()
@@ -92,11 +106,15 @@ impl Core {
         let handles = assets.into_iter().map(move |asset| {
             (
                 asset.clone(),
-                fetch_candles(Duration::days(1), asset.clone(), binance_client.clone()),
+                fetch_candles(
+                    Duration::days(n_days),
+                    asset.clone(),
+                    binance_client.clone(),
+                ),
             )
         });
         let (notify_transmitter, notify_receiver) = mpsc::channel(1);
-        let mut database = self.database.clone();
+        let database = self.database.clone();
         tokio::spawn(async move {
             for handle in handles {
                 match handle.1.await {
@@ -181,6 +199,84 @@ impl Core {
             );
         }
     }
+    async fn generate_session_summary(mut self) -> Result<Vec<Table>, CoreError> {
+        // Fetch statistics for each Market
+        let assets: Vec<_> = self.command_transmitters.into_keys().collect();
+        let mut stats_per_market = Vec::new();
+
+        let futures: Vec<_> = assets
+            .into_iter()
+            .map(|asset| {
+                let portfolio_clone = self.portfolio.clone();
+                tokio::spawn(async move {
+                    let mut portfolio = portfolio_clone.lock().await;
+                    match portfolio.get_statistics(&asset).await {
+                        Ok(statistics) => Some((asset, statistics)),
+                        Err(error) => {
+                            error!(
+                                ?error,
+                                ?asset,
+                                "failed to get Market statistics when generating trading session summary"
+                            );
+                            None
+                        }
+                    }
+                })
+            })
+            .collect();
+
+        for future in futures {
+            if let Some(result) = future.await.unwrap() {
+                stats_per_market.push(result);
+            }
+        }
+
+        let mut database = self.database.lock().await;
+        let final_balance = database.get_balance(self.id).ok();
+        let assets: Vec<Asset> = self
+            .traders
+            .iter()
+            .map(|trader| {
+                let asset = &trader.asset;
+                asset.clone().to_owned()
+            })
+            .collect();
+        let final_positions = database.get_open_positions(self.id, assets);
+        warn!("FINAL BALANCE: {:?}", final_balance);
+        warn!("FINAL POSITIONS: {:?}", final_positions);
+        // Generate average statistics across all markets using session's exited Positions
+        database
+            .get_exited_positions(self.id)
+            .map(|exited_positions| {
+                let _ = &self.statistics_summary.generate_summary(&exited_positions);
+            })
+            .unwrap_or_else(|error| {
+                warn!(
+                    ?error,
+                    why = "failed to get exited Positions from Portfolio's repository",
+                    "failed to generate Statistics summary for trading session"
+                );
+            });
+
+        // Combine Total & Per-Market Statistics Into Table
+        // let table = crate::statistic::combine(
+        //     stats_per_market.chain([("Total".to_owned(), self.statistics_summary)]),
+        // );
+
+        let stats_per_market: Vec<_> = stats_per_market
+            .into_iter()
+            .map(|(asset, summary)| (asset.to_string(), summary))
+            .collect();
+
+        let tables = crate::statistic::combine(
+            stats_per_market
+                .into_iter()
+                .chain([("Total".to_owned(), self.statistics_summary)])
+                .collect(),
+        );
+
+        Ok(tables)
+    }
 }
 
 pub struct CoreBuilder {
@@ -191,6 +287,8 @@ pub struct CoreBuilder {
     command_reciever: Option<Receiver<Command>>,
     command_transmitters: Option<HashMap<Asset, mpsc::Sender<Command>>>,
     traders: Option<Vec<Trader>>,
+    statistics_summary: Option<TradingSummary>,
+    n_days_history_fetch: Option<i64>,
 }
 
 impl CoreBuilder {
@@ -203,6 +301,8 @@ impl CoreBuilder {
             command_reciever: None,
             command_transmitters: None,
             traders: None,
+            statistics_summary: None,
+            n_days_history_fetch: None,
         }
     }
     pub fn id(self, id: Uuid) -> Self {
@@ -247,6 +347,19 @@ impl CoreBuilder {
             ..self
         }
     }
+    pub fn statistics_summary(self, value: TradingSummary) -> Self {
+        CoreBuilder {
+            statistics_summary: Some(value),
+            ..self
+        }
+    }
+    pub fn n_days_history_fetch(self, value: i64) -> Self {
+        CoreBuilder {
+            n_days_history_fetch: Some(value),
+            ..self
+        }
+    }
+
     pub fn build(self) -> Result<Core, CoreError> {
         let binance_client = self
             .binance_client
@@ -270,6 +383,12 @@ impl CoreBuilder {
             traders: self
                 .traders
                 .ok_or(CoreError::BuilderIncomplete("traders"))?,
+            statistics_summary: self
+                .statistics_summary
+                .ok_or(CoreError::BuilderIncomplete("statistics summary"))?,
+            n_days_history_fetch: self
+                .n_days_history_fetch
+                .ok_or(CoreError::BuilderIncomplete("n_days_history_fetch"))?,
         };
         Ok(core)
     }

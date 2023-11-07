@@ -60,6 +60,9 @@ impl Trader {
     }
     pub async fn run(&mut self) -> Result<(), TraderError> {
         info!("Trader {} starting up.", self.asset);
+        let _ = self.market_feed.run().await?;
+        info!("Trader {} starting event loop.", self.asset);
+        let _ = tokio::time::sleep(std::time::Duration::from_millis(1)).await;
         loop {
             while let Some(command) = self.receive_remote_command() {
                 match command {
@@ -72,9 +75,10 @@ impl Trader {
                 }
             }
             match self.market_feed.next() {
-                Feed::Next(asset) => {
-                    self.event_transmitter.send(Event::Market(asset.clone()));
-                    self.event_queue.push_back(Event::Market(asset));
+                Feed::Next(market_event) => {
+                    self.event_transmitter
+                        .send(Event::Market(market_event.clone()));
+                    self.event_queue.push_back(Event::Market(market_event));
                 }
                 Feed::Unhealthy => {
                     warn!(
@@ -101,33 +105,47 @@ impl Trader {
                                 return Err(TraderError::from(e));
                             }
                         }
+                        if let Some(position_update) = self
+                            .portfolio
+                            .lock()
+                            .await
+                            .update_from_market(market_event)
+                            .await?
+                        {
+                            self.event_transmitter
+                                .send(Event::PositionUpdate(position_update));
+                        }
                     }
                     Event::Signal(signal) => {
-                        if let Ok(Some(order)) =
-                            self.portfolio.lock().await.generate_order(&signal).await
-                        {
-                            self.event_transmitter.send(Event::Order(order.clone()));
-                            self.event_queue.push_back(Event::Order(order));
+                        match self.portfolio.lock().await.generate_order(&signal).await {
+                            Ok(order) => {
+                                if let Some(order) = order {
+                                    self.event_transmitter.send(Event::Order(order.clone()));
+                                    self.event_queue.push_back(Event::Order(order));
+                                }
+                            }
+                            Err(e) => warn!("{}", e),
                         }
                     }
                     Event::SignalForceExit(signal_force_exit) => {
-                        if let Ok(Some(order)) = self
+                        match self
                             .portfolio
                             .lock()
                             .await
                             .generate_exit_order(signal_force_exit)
                             .await
                         {
-                            self.event_transmitter.send(Event::Order(order.clone()));
-                            self.event_queue.push_back(Event::Order(order));
+                            Ok(order) => {
+                                if let Some(order) = order {
+                                    self.event_transmitter.send(Event::Order(order.clone()));
+                                    self.event_queue.push_back(Event::Order(order));
+                                }
+                            }
+                            Err(e) => warn!("{}", e),
                         }
                     }
                     Event::Order(order) => {
-                        let fill = self
-                            .execution
-                            .generate_fill(&order)
-                            .expect("failed to generate Fill");
-
+                        let fill = self.execution.generate_fill(&order)?;
                         self.event_transmitter.send(Event::Fill(fill.clone()));
                         self.event_queue.push_back(Event::Fill(fill));
                     }
@@ -146,6 +164,8 @@ impl Trader {
                 "Trader trading loop stopped"
             );
         }
+
+        info!("Trader {} shutting down.", self.asset);
         Ok(())
     }
     fn receive_remote_command(&mut self) -> Option<Command> {
@@ -185,6 +205,7 @@ pub struct TraderBuilder {
     portfolio: Option<Arc<Mutex<Portfolio>>>,
     strategy: Option<Strategy>,
     execution: Option<Execution>,
+    is_live: Option<bool>,
 }
 impl TraderBuilder {
     pub fn new() -> TraderBuilder {
@@ -192,6 +213,7 @@ impl TraderBuilder {
             core_id: None,
             command_reciever: None,
             asset: None,
+            is_live: None,
             event_transmitter: None,
             portfolio: None,
             market_feed: None,
@@ -256,12 +278,19 @@ impl TraderBuilder {
         }
     }
 
+    pub fn is_live(self, value: bool) -> Self {
+        Self {
+            is_live: Some(value),
+            ..self
+        }
+    }
+
     pub fn build(self) -> Result<Trader, TraderError> {
         Ok(Trader {
             core_id: self
                 .core_id
                 .ok_or(TraderError::BuilderIncomplete("engine_id"))?,
-            asset: self.asset.ok_or(TraderError::BuilderIncomplete("market"))?,
+            asset: self.asset.ok_or(TraderError::BuilderIncomplete("asset"))?,
             command_reciever: self
                 .command_reciever
                 .ok_or(TraderError::BuilderIncomplete("command_rx"))?,

@@ -10,7 +10,7 @@ import os
 while not os.path.basename(os.getcwd()) == 'server':
     os.chdir('..')  # Move up one directory
 
-def backtest():
+def backtest(candle_time=None):
     warnings.simplefilter(action='ignore', category=FutureWarning)
     warnings.simplefilter("ignore", category=RuntimeWarning)
 
@@ -79,4 +79,5 @@ def backtest():
         else:
             return "hold"
     cut_predictions['model_prediction'] = cut_predictions.apply(set_model_prediction, axis=1).astype(str)
-    return(tuple(cut_predictions['model_prediction']))
+    return(cut_predictions['model_prediction'].tolist())
+

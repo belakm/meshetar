@@ -86,23 +86,25 @@ impl EventTx {
 pub async fn core_events_listener(
     mut event_receiver: mpsc::UnboundedReceiver<Event>,
     database: Arc<Mutex<Database>>,
+    is_live: bool,
 ) {
     while let Some(event) = event_receiver.recv().await {
-        info!("NEW EVENT");
         match event {
             Event::Market(ev) => match ev.detail {
                 MarketEventDetail::Candle(candle) => {
-                    let mut database = database.lock().await;
-                    let candles: Vec<Candle> = vec![candle];
-                    let insert = database.add_candles(ev.asset, candles).await;
-                    match insert {
-                        Ok(_) => info!("Inserted new candle."),
-                        Err(e) => warn!("Error inserting candle: {:?}", e),
+                    if is_live {
+                        let mut database = database.lock().await;
+                        let candles: Vec<Candle> = vec![candle];
+                        let insert = database.add_candles(ev.asset, candles).await;
+                        match insert {
+                            Ok(_) => info!("Inserted new candle."),
+                            Err(e) => warn!("Error inserting candle: {:?}", e),
+                        }
                     }
                 }
-                _ => info!("{:?}", ev),
+                _ => (), //info!("{:?}", ev),
             },
-            _ => info!("{:?}", event),
+            _ => (), // info!("{:?}", event),
         }
     }
 }

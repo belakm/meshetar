@@ -1,24 +1,23 @@
 pub mod asset_ticker;
-pub mod book;
+pub mod backtest_ticker;
+// pub mod book;
 pub mod error;
-pub mod routes;
-use std::sync::Arc;
+// pub mod routes;
 
 use self::{asset_ticker::KlineEvent, error::AssetError};
 use crate::{
-    database,
-    utils::{
-        binance_client::{BinanceClient, BINANCE_CLIENT},
-        formatting::{timestamp_to_dt, timestamp_to_string},
-        serde_utils::f64_from_string,
-    },
+    database::Database,
+    strategy::Signal,
+    utils::{binance_client::BinanceClient, formatting::timestamp_to_dt},
 };
 use binance_spot_connector_rust::market::klines::KlineInterval;
 use chrono::{DateTime, Duration, Utc};
 use futures::TryFutureExt;
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+use std::sync::Arc;
 use strum::Display;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tracing::info;
 
 #[derive(PartialEq, Display, Debug, Hash, Eq, Clone, Serialize, Deserialize, PartialOrd)]
@@ -46,6 +45,7 @@ pub enum MarketEventDetail {
     Trade(PublicTrade),
     OrderBookL1(OrderBookL1),
     Candle(Candle),
+    BacktestCandle((Candle, Option<Signal>)),
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
@@ -56,7 +56,7 @@ pub struct Liquidation {
     pub time: DateTime<Utc>,
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
+#[derive(FromRow, Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
 pub struct Candle {
     pub open_time: DateTime<Utc>,
     pub close_time: DateTime<Utc>,
@@ -134,23 +134,74 @@ pub enum Side {
 }
 
 pub struct MarketFeed {
-    pub market_receiver: mpsc::UnboundedReceiver<MarketEvent>,
+    pub market_receiver: Option<mpsc::UnboundedReceiver<MarketEvent>>,
+    is_live: bool,
+    asset: Asset,
+    database: Arc<Mutex<Database>>,
+    last_n_candles: usize,
 }
 impl MarketFeed {
     pub fn next(&mut self) -> Feed {
+        if self.market_receiver.is_none() {
+            return Feed::Unhealthy;
+        }
         loop {
-            match self.market_receiver.try_recv() {
+            match self.market_receiver.as_mut().unwrap().try_recv() {
                 Ok(event) => break Feed::Next(event),
                 Err(mpsc::error::TryRecvError::Empty) => continue,
                 Err(mpsc::error::TryRecvError::Disconnected) => break Feed::Finished,
             }
         }
     }
-    pub async fn new(asset: Asset) -> Result<Self, AssetError> {
-        let receiver = asset_ticker::new_ticker(asset).await?;
-        Ok(Self {
-            market_receiver: receiver,
-        })
+    pub async fn run(&mut self) -> Result<(), AssetError> {
+        info!("Datafeed init.");
+        self.market_receiver = if self.is_live {
+            Some(self.new_live_feed(self.asset.clone()).await?)
+        } else {
+            Some(
+                self.new_backtest(
+                    self.asset.clone(),
+                    self.database.clone(),
+                    self.last_n_candles,
+                )
+                .await?,
+            )
+        };
+        info!(
+            "Datafeed init complete. Market receiver is ok: {}",
+            self.market_receiver.is_some()
+        );
+        Ok(())
+    }
+    async fn new_live_feed(
+        &self,
+        asset: Asset,
+    ) -> Result<mpsc::UnboundedReceiver<MarketEvent>, AssetError> {
+        let ticker = asset_ticker::new_ticker(asset).await?;
+        Ok(ticker)
+    }
+    async fn new_backtest(
+        &self,
+        asset: Asset,
+        database: Arc<Mutex<Database>>,
+        last_n_candles: usize,
+    ) -> Result<mpsc::UnboundedReceiver<MarketEvent>, AssetError> {
+        let ticker = backtest_ticker::new_ticker(asset, database, last_n_candles).await?;
+        Ok(ticker)
+    }
+    pub fn new(
+        asset: Asset,
+        is_live: bool,
+        database: Arc<Mutex<Database>>,
+        last_n_candles: usize,
+    ) -> Self {
+        MarketFeed {
+            market_receiver: None,
+            asset,
+            is_live,
+            database,
+            last_n_candles,
+        }
     }
 }
 

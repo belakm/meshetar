@@ -18,13 +18,14 @@ import warnings
 import os
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 50)
-while not os.path.basename(os.getcwd()) == 'server':
-    os.chdir('..')  # Move up one directory
+#while not os.path.basename(os.getcwd()) == 'meshetar/server':
+#    os.chdir('..')  # Move up one directory
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-
 # %%
+#import os
+#print(os.path.abspath('./database.sqlite'))
 conn = sqlite3.connect('./database.sqlite')
 # cursor = sqliteConnection.cursor()
 query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,

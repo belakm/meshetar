@@ -36,7 +36,10 @@ impl Execution {
             decision: order.decision,
             quantity: order.quantity,
             fill_value_gross: order.quantity.abs() * order.market_meta.close,
-            fees: order.fees,
+            fees: Fees {
+                exchange: 0.0,
+                slippage: 0.0,
+            },
         })
     }
 }

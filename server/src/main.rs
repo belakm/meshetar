@@ -4,17 +4,18 @@ mod database;
 mod events;
 mod plotting;
 mod portfolio;
+mod statistic;
 mod strategy;
 mod trading;
 mod utils;
 
-use assets::{error::AssetError, Asset, MarketFeed};
 use crate::core::{error::CoreError, Command, Core};
+use assets::{error::AssetError, Asset, MarketFeed};
 use database::{error::DatabaseError, Database};
 use env_logger::Builder;
 use events::{core_events_listener, EventTx};
 use log::LevelFilter;
-use portfolio::{error::PortfolioError, Portfolio};
+use portfolio::{allocator::Allocator, error::PortfolioError, risk::RiskEvaluator, Portfolio};
 use rocket::{
     catch,
     fairing::{Fairing, Info, Kind},
@@ -23,6 +24,7 @@ use rocket::{
     http::Status,
     Error as RocketError, Request, Response,
 };
+use statistic::{StatisticConfig, TradingSummary};
 use std::{collections::HashMap, sync::Arc};
 use strategy::Strategy;
 use thiserror::Error;
@@ -30,8 +32,12 @@ use tokio::sync::Mutex;
 use tokio::sync::{mpsc, watch};
 use tracing::{error, info};
 use trading::{error::TraderError, execution::Execution, Trader};
-use utils::binance_client::{self, BinanceClient, BinanceClientError};
+use utils::binance_client::{BinanceClient, BinanceClientError};
 use uuid::Uuid;
+
+const IS_LIVE: bool = false;
+const BACKTEST_LAST_N_CANDLES: usize = 1490;
+const FETCH_N_DAYS_HISTORY: i64 = 2;
 
 pub struct CORS;
 
@@ -47,7 +53,7 @@ enum MainError {
     Trader(#[from] TraderError),
     #[error("Binance client error: {0}")]
     BinanceClient(#[from] BinanceClientError),
-    #[error("Asset Feed error: {0}")]
+    #[error("Assets: {0}")]
     Asset(#[from] AssetError),
     #[error("Rocket server error: {0}")]
     Rocket(#[from] RocketError),
@@ -128,31 +134,45 @@ async fn run() -> Result<(), MainError> {
         Portfolio::builder()
             .database(database.clone())
             .core_id(core_id.clone())
+            .allocation_manager(Allocator {
+                default_order_value: 100.0,
+            })
+            .risk_manager(RiskEvaluator {})
+            .starting_cash(1000.0)
+            .assets(vec![Asset::BTCUSDT])
+            .statistic_config(StatisticConfig {
+                starting_equity: 1000.0,
+                trading_days_per_year: 365,
+                risk_free_return: 0.0,
+            })
             .build()
-            .map_err(MainError::from)?,
+            .await?,
     ));
 
     let mut traders = Vec::new();
     let (command_transmitter, command_receiver) = mpsc::channel::<Command>(20);
     let (trader_command_transmitter, trader_command_receiver) = mpsc::channel::<Command>(20);
     let command_transmitters = HashMap::from([(Asset::BTCUSDT, trader_command_transmitter)]);
-
     traders.push(
         Trader::builder()
             .core_id(core_id)
             .asset(Asset::BTCUSDT)
+            .is_live(IS_LIVE)
             .command_reciever(trader_command_receiver)
             .event_transmitter(event_transmitter)
             .portfolio(Arc::clone(&portfolio))
-            .market_feed(MarketFeed {
-                market_receiver: MarketFeed::new(Asset::BTCUSDT).await?.market_receiver,
-            })
+            .market_feed(MarketFeed::new(
+                Asset::BTCUSDT,
+                IS_LIVE,
+                database.clone(),
+                BACKTEST_LAST_N_CANDLES,
+            ))
             .strategy(Strategy::new(Asset::BTCUSDT))
             .execution(Execution::new())
             .build()?,
     );
 
-    let mut core = Core::builder()
+    let core = Core::builder()
         .id(core_id)
         .binance_client(BinanceClient::new().map_err(MainError::from).await?)
         .portfolio(portfolio)
@@ -160,9 +180,15 @@ async fn run() -> Result<(), MainError> {
         .command_transmitters(command_transmitters)
         .traders(traders)
         .database(database.clone())
+        .statistics_summary(TradingSummary::init(StatisticConfig {
+            starting_equity: 1000.0,
+            trading_days_per_year: 365,
+            risk_free_return: 0.0,
+        }))
+        .n_days_history_fetch(FETCH_N_DAYS_HISTORY)
         .build()?;
 
-    let listener_task = tokio::spawn(core_events_listener(event_receiver, database));
+    let listener_task = tokio::spawn(core_events_listener(event_receiver, database, IS_LIVE));
     // let _ = tokio::time::timeout(Duration::from_secs(20), core.run());
     let core_task = tokio::spawn(async move { core.run().await });
     let (core_result, listener_result) = tokio::join!(core_task, listener_task);

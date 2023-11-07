@@ -9,7 +9,7 @@ pub enum PortfolioError {
     BuilderIncomplete(&'static str),
     #[error("Cannot generate PositionExit from Position that has not been exited")]
     PositionExit,
-    #[error("Failed to interact with database")]
+    #[error("Failed to interact with database: {0}")]
     RepositoryInteraction(#[from] DatabaseError),
     #[error("Cannot exit Position with an entry decision FillEvent.")]
     CannotExitPositionWithEntryFill,
