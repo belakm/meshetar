@@ -88,7 +88,11 @@ impl Core {
 
         // File to print out the statistics
         let mut out = File::create("summary.html").unwrap();
-        let _print_statistics = self.generate_session_summary().await?.print_html(&mut out);
+        let _print_statistics = self.generate_session_summary().await?;
+        _print_statistics.iter().for_each(|table| {
+            let _ = table.print_html(&mut out);
+            let _ = table.printstd();
+        });
 
         Ok(())
     }
@@ -195,7 +199,7 @@ impl Core {
             );
         }
     }
-    async fn generate_session_summary(mut self) -> Result<Table, CoreError> {
+    async fn generate_session_summary(mut self) -> Result<Vec<Table>, CoreError> {
         // Fetch statistics for each Market
         let assets: Vec<_> = self.command_transmitters.into_keys().collect();
         let mut stats_per_market = Vec::new();
@@ -264,12 +268,14 @@ impl Core {
             .map(|(asset, summary)| (asset.to_string(), summary))
             .collect();
 
-        let table = crate::statistic::combine(
+        let tables = crate::statistic::combine(
             stats_per_market
                 .into_iter()
-                .chain([("Total".to_owned(), self.statistics_summary)]),
+                .chain([("Total".to_owned(), self.statistics_summary)])
+                .collect(),
         );
-        Ok(table)
+
+        Ok(tables)
     }
 }
 

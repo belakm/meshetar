@@ -45,71 +45,6 @@ impl TradingSummary {
     }
 }
 
-impl TableBuilder for TradingSummary {
-    fn titles(&self) -> Row {
-        let mut titles = Vec::<Cell>::new();
-
-        for title in &self.pnl_returns.titles() {
-            titles.push(title.clone())
-        }
-
-        for title in &self.tear_sheet.titles() {
-            titles.push(title.clone())
-        }
-
-        for title in &self.drawdown.titles() {
-            titles.push(title.clone())
-        }
-
-        for title in &self.pnl.titles() {
-            titles.push(title.clone())
-        }
-
-        Row::new(titles)
-    }
-
-    fn row(&self) -> Row {
-        let mut cells = Vec::<Cell>::new();
-
-        for cell in &self.pnl_returns.row() {
-            cells.push(cell.clone())
-        }
-
-        for cell in &self.tear_sheet.row() {
-            cells.push(cell.clone())
-        }
-
-        for cell in &self.drawdown.row() {
-            cells.push(cell.clone())
-        }
-
-        for cell in &self.pnl.row() {
-            cells.push(cell.clone())
-        }
-
-        Row::new(cells)
-    }
-}
-
-pub fn split_into_tables(trading_summary: &TradingSummary) -> Vec<Table> {
-    // Create a vector to hold the four tables
-    let mut tables = vec![Table::new(), Table::new(), Table::new(), Table::new()];
-
-    // Set titles for each table
-    tables[0].set_titles(trading_summary.pnl_returns.titles());
-    tables[1].set_titles(trading_summary.tear_sheet.titles());
-    tables[2].set_titles(trading_summary.drawdown.titles());
-    tables[3].set_titles(trading_summary.pnl.titles());
-
-    // Insert rows for each table
-    tables[0].add_row(trading_summary.pnl_returns.row());
-    tables[1].add_row(trading_summary.tear_sheet.row());
-    tables[2].add_row(trading_summary.drawdown.row());
-    tables[3].add_row(trading_summary.pnl.row());
-
-    tables
-}
-
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
 pub struct StatisticConfig {
     pub starting_equity: f64,
@@ -200,27 +135,37 @@ pub trait TableBuilder {
     }
 }
 
-pub fn combine<Iter, T>(builders: Iter) -> Table
-where
-    Iter: IntoIterator<Item = (String, T)>,
-    T: TableBuilder,
-{
+pub fn combine(builders: Vec<(String, TradingSummary)>) -> Vec<Table> {
+    let mut tables = vec![Table::new(), Table::new(), Table::new(), Table::new()];
     builders
         .into_iter()
         .enumerate()
-        .fold(Table::new(), |mut table, (index, (id, builder))| {
-            // Set Table titles using the first builder
-            if index == 0 {
-                let titles = builder.titles();
-                //titles.insert_cell(0, Cell::new(""));
-                table.set_titles(titles);
+        .for_each(|(row_index, (id, trading_summary))| {
+            if row_index == 0 {
+                let mut rows = Vec::with_capacity(4);
+                rows.push(trading_summary.pnl_returns.titles());
+                rows.push(trading_summary.tear_sheet.titles());
+                rows.push(trading_summary.drawdown.titles());
+                rows.push(trading_summary.pnl.titles());
+                for (index, row) in rows.iter_mut().enumerate() {
+                    row.insert_cell(0, Cell::new("Asset"));
+                    tables[index].set_titles(row.to_owned())
+                }
             }
 
-            // Add rows for each builder
-            let mut row = builder.row();
-            row.insert_cell(0, Cell::new(&id));
-            table.add_row(row);
+            // Insert rows for each table
+            tables[0].add_row(trading_summary.pnl_returns.row());
+            tables[1].add_row(trading_summary.tear_sheet.row());
+            tables[2].add_row(trading_summary.drawdown.row());
+            tables[3].add_row(trading_summary.pnl.row());
 
-            table
-        })
+            for table in tables.iter_mut() {
+                table
+                    .get_mut_row(row_index)
+                    .unwrap()
+                    .insert_cell(0, Cell::new(&id));
+            }
+        });
+
+    tables
 }
