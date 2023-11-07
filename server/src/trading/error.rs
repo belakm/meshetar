@@ -1,4 +1,6 @@
-use crate::{portfolio::error::PortfolioError, strategy::error::StrategyError};
+use crate::{
+    assets::error::AssetError, portfolio::error::PortfolioError, strategy::error::StrategyError,
+};
 use thiserror::Error;
 
 /// All errors generated in the barter::portfolio module.
@@ -12,4 +14,6 @@ pub enum TraderError {
     RepositoryInteraction(#[from] PortfolioError),
     #[error("Strategy error")]
     StrategyError(#[from] StrategyError),
+    #[error("Asset error: {0}")]
+    AssetError(#[from] AssetError),
 }

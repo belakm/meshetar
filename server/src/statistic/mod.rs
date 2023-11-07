@@ -91,6 +91,25 @@ impl TableBuilder for TradingSummary {
     }
 }
 
+pub fn split_into_tables(trading_summary: &TradingSummary) -> Vec<Table> {
+    // Create a vector to hold the four tables
+    let mut tables = vec![Table::new(), Table::new(), Table::new(), Table::new()];
+
+    // Set titles for each table
+    tables[0].set_titles(trading_summary.pnl_returns.titles());
+    tables[1].set_titles(trading_summary.tear_sheet.titles());
+    tables[2].set_titles(trading_summary.drawdown.titles());
+    tables[3].set_titles(trading_summary.pnl.titles());
+
+    // Insert rows for each table
+    tables[0].add_row(trading_summary.pnl_returns.row());
+    tables[1].add_row(trading_summary.tear_sheet.row());
+    tables[2].add_row(trading_summary.drawdown.row());
+    tables[3].add_row(trading_summary.pnl.row());
+
+    tables
+}
+
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
 pub struct StatisticConfig {
     pub starting_equity: f64,

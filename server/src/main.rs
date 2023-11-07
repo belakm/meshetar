@@ -32,12 +32,12 @@ use tokio::sync::Mutex;
 use tokio::sync::{mpsc, watch};
 use tracing::{error, info};
 use trading::{error::TraderError, execution::Execution, Trader};
-use utils::binance_client::{self, BinanceClient, BinanceClientError};
+use utils::binance_client::{BinanceClient, BinanceClientError};
 use uuid::Uuid;
 
-const IS_LIVE: bool = false;
+const IS_LIVE: bool = true;
 const BACKTEST_LAST_N_CANDLES: usize = 1490;
-const FETCH_N_DAYS_HISTORY: i64 = 3;
+const FETCH_N_DAYS_HISTORY: i64 = 2;
 
 pub struct CORS;
 
@@ -153,17 +153,6 @@ async fn run() -> Result<(), MainError> {
     let (command_transmitter, command_receiver) = mpsc::channel::<Command>(20);
     let (trader_command_transmitter, trader_command_receiver) = mpsc::channel::<Command>(20);
     let command_transmitters = HashMap::from([(Asset::BTCUSDT, trader_command_transmitter)]);
-    let market_receiver = if IS_LIVE {
-        MarketFeed::new_live_feed(Asset::BTCUSDT)
-            .await?
-            .market_receiver
-    } else {
-        MarketFeed::new_backtest(Asset::BTCUSDT, database.clone(), BACKTEST_LAST_N_CANDLES)
-            .await?
-            .market_receiver
-    };
-    let market_feed = MarketFeed { market_receiver };
-
     traders.push(
         Trader::builder()
             .core_id(core_id)
@@ -172,7 +161,12 @@ async fn run() -> Result<(), MainError> {
             .command_reciever(trader_command_receiver)
             .event_transmitter(event_transmitter)
             .portfolio(Arc::clone(&portfolio))
-            .market_feed(market_feed)
+            .market_feed(MarketFeed::new(
+                Asset::BTCUSDT,
+                IS_LIVE,
+                database.clone(),
+                BACKTEST_LAST_N_CANDLES,
+            ))
             .strategy(Strategy::new(Asset::BTCUSDT))
             .execution(Execution::new())
             .build()?,

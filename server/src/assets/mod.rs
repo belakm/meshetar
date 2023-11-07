@@ -134,33 +134,75 @@ pub enum Side {
 }
 
 pub struct MarketFeed {
-    pub market_receiver: mpsc::UnboundedReceiver<MarketEvent>,
+    pub market_receiver: Option<mpsc::UnboundedReceiver<MarketEvent>>,
+    is_live: bool,
+    asset: Asset,
+    database: Arc<Mutex<Database>>,
+    last_n_candles: usize,
 }
 impl MarketFeed {
-    pub fn next(&mut self) -> Feed {
+    pub async fn next(&mut self) -> Feed {
+        if self.market_receiver.is_none() {
+            return Feed::Unhealthy;
+        }
         loop {
-            match self.market_receiver.try_recv() {
+            let _ = tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            match self.market_receiver.as_mut().unwrap().try_recv() {
                 Ok(event) => break Feed::Next(event),
                 Err(mpsc::error::TryRecvError::Empty) => continue,
                 Err(mpsc::error::TryRecvError::Disconnected) => break Feed::Finished,
             }
         }
     }
-    pub async fn new_live_feed(asset: Asset) -> Result<Self, AssetError> {
-        let receiver = asset_ticker::new_ticker(asset).await?;
-        Ok(Self {
-            market_receiver: receiver,
-        })
+    pub async fn run(&mut self) -> Result<(), AssetError> {
+        info!("Datafeed init.");
+        self.market_receiver = if self.is_live {
+            Some(self.new_live_feed(self.asset.clone()).await?)
+        } else {
+            Some(
+                self.new_backtest(
+                    self.asset.clone(),
+                    self.database.clone(),
+                    self.last_n_candles,
+                )
+                .await?,
+            )
+        };
+        info!(
+            "Datafeed init complete. Market receiver is ok: {}",
+            self.market_receiver.is_some()
+        );
+        Ok(())
     }
-    pub async fn new_backtest(
+    async fn new_live_feed(
+        &self,
+        asset: Asset,
+    ) -> Result<mpsc::UnboundedReceiver<MarketEvent>, AssetError> {
+        let ticker = asset_ticker::new_ticker(asset).await?;
+        Ok(ticker)
+    }
+    async fn new_backtest(
+        &self,
         asset: Asset,
         database: Arc<Mutex<Database>>,
         last_n_candles: usize,
-    ) -> Result<Self, AssetError> {
-        let receiver = backtest_ticker::new_ticker(asset, database, last_n_candles).await?;
-        Ok(Self {
-            market_receiver: receiver,
-        })
+    ) -> Result<mpsc::UnboundedReceiver<MarketEvent>, AssetError> {
+        let ticker = backtest_ticker::new_ticker(asset, database, last_n_candles).await?;
+        Ok(ticker)
+    }
+    pub fn new(
+        asset: Asset,
+        is_live: bool,
+        database: Arc<Mutex<Database>>,
+        last_n_candles: usize,
+    ) -> Self {
+        MarketFeed {
+            market_receiver: None,
+            asset,
+            is_live,
+            database,
+            last_n_candles,
+        }
     }
 }
 

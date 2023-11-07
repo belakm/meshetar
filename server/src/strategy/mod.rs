@@ -140,6 +140,7 @@ impl Strategy {
                 }
             })
             .collect();
+
         Ok(Some(signals))
     }
 }
