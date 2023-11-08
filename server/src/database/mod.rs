@@ -223,14 +223,6 @@ impl Database {
             .filter(|(position_id, _)| position_id.contains(&core_id.to_string()))
             .map(|(_, position)| Position::clone(position))
             .collect())
-        // Ok(assets
-        //     .into_iter()
-        //     .filter_map(|asset| {
-        //         self.open_positions
-        //             .get(&determine_position_id(core_id, &asset))
-        //             .map(Position::clone)
-        //     })
-        //     .collect())
     }
 
     pub fn remove_position(

@@ -163,6 +163,7 @@ impl MarketFeed {
                     self.asset.clone(),
                     self.database.clone(),
                     self.last_n_candles,
+                    50,
                 )
                 .await?,
             )
@@ -185,8 +186,11 @@ impl MarketFeed {
         asset: Asset,
         database: Arc<Mutex<Database>>,
         last_n_candles: usize,
+        buffer_n_of_candles: usize,
     ) -> Result<mpsc::UnboundedReceiver<MarketEvent>, AssetError> {
-        let ticker = backtest_ticker::new_ticker(asset, database, last_n_candles).await?;
+        let ticker =
+            backtest_ticker::new_ticker(asset, database, last_n_candles, buffer_n_of_candles)
+                .await?;
         Ok(ticker)
     }
     pub fn new(

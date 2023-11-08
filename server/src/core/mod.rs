@@ -4,7 +4,7 @@ use crate::{
     assets::{fetch_candles, Asset},
     database::Database,
     portfolio::Portfolio,
-    statistic::TradingSummary,
+    statistic::{StatisticConfig, TradingSummary},
     trading::Trader,
     utils::binance_client::BinanceClient,
 };
@@ -34,9 +34,10 @@ pub struct Core {
     binance_client: Arc<BinanceClient>,
     command_reciever: Receiver<Command>,
     command_transmitters: HashMap<Asset, mpsc::Sender<Command>>,
-    statistics_summary: TradingSummary,
+    statistics_config: StatisticConfig,
     traders: Vec<Trader>,
     n_days_history_fetch: i64,
+    trading_is_live: bool,
 }
 
 impl Core {
@@ -52,6 +53,12 @@ impl Core {
         loop {
             tokio::select! {
                 _ = fetching_stopped.recv() => {
+                    self
+                    .portfolio
+                    .lock()
+                    .await
+                    .init_statistics(self.statistics_config)
+                    .await;
                     break;
                 }
             }
@@ -199,11 +206,11 @@ impl Core {
             );
         }
     }
-    async fn generate_session_summary(mut self) -> Result<Vec<Table>, CoreError> {
+    async fn generate_session_summary(self) -> Result<Vec<Table>, CoreError> {
         // Fetch statistics for each Market
+
         let assets: Vec<_> = self.command_transmitters.into_keys().collect();
         let mut stats_per_market = Vec::new();
-
         let futures: Vec<_> = assets
             .into_iter()
             .map(|asset| {
@@ -233,22 +240,23 @@ impl Core {
 
         let mut database = self.database.lock().await;
         let final_balance = database.get_balance(self.id).ok();
-        let assets: Vec<Asset> = self
-            .traders
+        let min_start_time = stats_per_market
             .iter()
-            .map(|trader| {
-                let asset = &trader.asset;
-                asset.clone().to_owned()
-            })
-            .collect();
-        let final_positions = database.get_all_open_positions(self.id);
+            .map(|(_, stats)| stats)
+            .min_by(|stats1, stats2| stats1.starting_time.cmp(&stats2.starting_time))
+            .map(|stats| stats.starting_time)
+            .to_owned()
+            .unwrap();
+        warn!("TRADING SINCE: {}", min_start_time);
+        let mut statistics_summary =
+            TradingSummary::init(self.statistics_config, Some(min_start_time));
         warn!("FINAL BALANCE: {:?}", final_balance);
-        warn!("FINAL POSITIONS: {:?}", final_positions);
+
         // Generate average statistics across all markets using session's exited Positions
         database
             .get_exited_positions(self.id)
             .map(|exited_positions| {
-                let _ = &self.statistics_summary.generate_summary(&exited_positions);
+                let _ = statistics_summary.generate_summary(&exited_positions);
             })
             .unwrap_or_else(|error| {
                 warn!(
@@ -258,11 +266,6 @@ impl Core {
                 );
             });
 
-        // Combine Total & Per-Market Statistics Into Table
-        // let table = crate::statistic::combine(
-        //     stats_per_market.chain([("Total".to_owned(), self.statistics_summary)]),
-        // );
-
         let stats_per_market: Vec<_> = stats_per_market
             .into_iter()
             .map(|(asset, summary)| (asset.to_string(), summary))
@@ -271,7 +274,7 @@ impl Core {
         let tables = crate::statistic::combine(
             stats_per_market
                 .into_iter()
-                .chain([("Total".to_owned(), self.statistics_summary)])
+                .chain([("Total".to_owned(), statistics_summary)])
                 .collect(),
         );
 
@@ -287,8 +290,9 @@ pub struct CoreBuilder {
     command_reciever: Option<Receiver<Command>>,
     command_transmitters: Option<HashMap<Asset, mpsc::Sender<Command>>>,
     traders: Option<Vec<Trader>>,
-    statistics_summary: Option<TradingSummary>,
+    statistics_config: Option<StatisticConfig>,
     n_days_history_fetch: Option<i64>,
+    trading_is_live: Option<bool>,
 }
 
 impl CoreBuilder {
@@ -301,8 +305,9 @@ impl CoreBuilder {
             command_reciever: None,
             command_transmitters: None,
             traders: None,
-            statistics_summary: None,
+            statistics_config: None,
             n_days_history_fetch: None,
+            trading_is_live: None,
         }
     }
     pub fn id(self, id: Uuid) -> Self {
@@ -347,15 +352,21 @@ impl CoreBuilder {
             ..self
         }
     }
-    pub fn statistics_summary(self, value: TradingSummary) -> Self {
+    pub fn statistics_config(self, value: StatisticConfig) -> Self {
         CoreBuilder {
-            statistics_summary: Some(value),
+            statistics_config: Some(value),
             ..self
         }
     }
     pub fn n_days_history_fetch(self, value: i64) -> Self {
         CoreBuilder {
             n_days_history_fetch: Some(value),
+            ..self
+        }
+    }
+    pub fn trading_is_live(self, value: bool) -> Self {
+        CoreBuilder {
+            trading_is_live: Some(value),
             ..self
         }
     }
@@ -383,12 +394,15 @@ impl CoreBuilder {
             traders: self
                 .traders
                 .ok_or(CoreError::BuilderIncomplete("traders"))?,
-            statistics_summary: self
-                .statistics_summary
+            statistics_config: self
+                .statistics_config
                 .ok_or(CoreError::BuilderIncomplete("statistics summary"))?,
             n_days_history_fetch: self
                 .n_days_history_fetch
                 .ok_or(CoreError::BuilderIncomplete("n_days_history_fetch"))?,
+            trading_is_live: self
+                .trading_is_live
+                .ok_or(CoreError::BuilderIncomplete("trading_is_live"))?,
         };
         Ok(core)
     }

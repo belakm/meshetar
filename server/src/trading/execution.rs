@@ -28,9 +28,14 @@ impl Execution {
     pub fn new() -> Self {
         Execution {}
     }
-    pub fn generate_fill(&self, order: &OrderEvent) -> Result<FillEvent, TraderError> {
+    pub fn generate_fill(
+        &self,
+        order: &OrderEvent,
+        live_time: bool,
+    ) -> Result<FillEvent, TraderError> {
+        let fill_time = if live_time { Utc::now() } else { order.time };
         Ok(FillEvent {
-            time: Utc::now(),
+            time: fill_time,
             asset: order.asset.clone(),
             market_meta: order.market_meta,
             decision: order.decision,

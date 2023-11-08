@@ -2,7 +2,10 @@ pub mod error;
 // pub mod routes;
 
 use self::error::StrategyError;
-use crate::assets::{Asset, Candle, MarketEvent, MarketEventDetail, MarketMeta};
+use crate::{
+    assets::{Asset, Candle, MarketEvent, MarketEventDetail, MarketMeta},
+    utils::remove_vec_items_from_start,
+};
 use chrono::{DateTime, Utc};
 use pyo3::{prelude::*, types::PyModule};
 use serde::{Deserialize, Serialize};
@@ -104,10 +107,13 @@ impl Strategy {
             Ok(None)
         }
     }
+
+    /// buffer_n_of_candles - number of candles that are required for analysis of the "first" candle
     pub async fn generate_backtest_signals(
         open_time: DateTime<Utc>,
         candles: Vec<Candle>,
         asset: Asset,
+        buffer_n_of_candles: usize,
     ) -> Result<Option<Vec<Option<Signal>>>, StrategyError> {
         let pyscript = include_str!("../../models/backtest.py");
         let args = (open_time.to_rfc3339(),);
@@ -120,20 +126,21 @@ impl Strategy {
             warn!("Backtest - no signals produced, check input.");
             return Ok(None);
         }
-        let time = Utc::now();
+        let candles_that_were_analyzed = remove_vec_items_from_start(candles, buffer_n_of_candles);
         let signals: Vec<Option<Signal>> = signals
             .iter()
             .enumerate()
             .map(|(index, signal_map)| {
+                let candle = candles_that_were_analyzed.get(index).unwrap();
                 if signal_map.len() == 0 {
                     None
                 } else {
                     Some(Signal {
-                        time,
+                        time: candle.close_time,
                         asset: asset.clone(),
                         market_meta: MarketMeta {
-                            close: candles.get(index).unwrap().close,
-                            time,
+                            close: candle.close,
+                            time: candle.close_time,
                         },
                         signals: signal_map.to_owned(),
                     })

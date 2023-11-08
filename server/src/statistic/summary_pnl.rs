@@ -121,9 +121,9 @@ impl Default for PnLReturnSummary {
 impl PnLReturnSummary {
     const SECONDS_IN_DAY: f64 = 86400.0;
 
-    pub fn new() -> Self {
+    pub fn new(starting_time: DateTime<Utc>) -> Self {
         Self {
-            time: Utc::now(),
+            time: starting_time,
             duration: Duration::zero(),
             trades_per_day: 0.0,
             total: Default::default(),
@@ -143,7 +143,7 @@ impl PnLReturnSummary {
 
     pub fn update_trades_per_day(&mut self) {
         self.trades_per_day = self.total.count as f64
-        // / (self.duration.num_seconds() as f64 / PnLReturnSummary::SECONDS_IN_DAY)
+            / (self.duration.num_seconds() as f64 / PnLReturnSummary::SECONDS_IN_DAY)
     }
 
     pub fn init(_: StatisticConfig) -> Self {
