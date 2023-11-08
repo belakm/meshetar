@@ -11,6 +11,7 @@ mod utils;
 
 use crate::core::{error::CoreError, Command, Core};
 use assets::{error::AssetError, Asset, MarketFeed};
+use chrono::Utc;
 use database::{error::DatabaseError, Database};
 use env_logger::Builder;
 use events::{core_events_listener, EventTx};
@@ -130,6 +131,12 @@ async fn run() -> Result<(), MainError> {
     let event_transmitter = EventTx::new(event_transmitter);
     let database: Arc<Mutex<Database>> =
         Arc::new(Mutex::new(Database::new().map_err(MainError::from).await?));
+    let statistic_config = StatisticConfig {
+        starting_equity: 1000.0,
+        trading_days_per_year: 365,
+        risk_free_return: 0.0,
+        created_at: Utc::now(),
+    };
     let portfolio: Arc<Mutex<Portfolio>> = Arc::new(Mutex::new(
         Portfolio::builder()
             .database(database.clone())
@@ -140,11 +147,8 @@ async fn run() -> Result<(), MainError> {
             .risk_manager(RiskEvaluator {})
             .starting_cash(1000.0)
             .assets(vec![Asset::BTCUSDT])
-            .statistic_config(StatisticConfig {
-                starting_equity: 1000.0,
-                trading_days_per_year: 365,
-                risk_free_return: 0.0,
-            })
+            .statistic_config(statistic_config.clone())
+            .trading_is_live(IS_LIVE)
             .build()
             .await?,
     ));
@@ -157,7 +161,7 @@ async fn run() -> Result<(), MainError> {
         Trader::builder()
             .core_id(core_id)
             .asset(Asset::BTCUSDT)
-            .is_live(IS_LIVE)
+            .trading_is_live(IS_LIVE)
             .command_reciever(trader_command_receiver)
             .event_transmitter(event_transmitter)
             .portfolio(Arc::clone(&portfolio))
@@ -180,12 +184,9 @@ async fn run() -> Result<(), MainError> {
         .command_transmitters(command_transmitters)
         .traders(traders)
         .database(database.clone())
-        .statistics_summary(TradingSummary::init(StatisticConfig {
-            starting_equity: 1000.0,
-            trading_days_per_year: 365,
-            risk_free_return: 0.0,
-        }))
+        .statistics_config(statistic_config)
         .n_days_history_fetch(FETCH_N_DAYS_HISTORY)
+        .trading_is_live(IS_LIVE)
         .build()?;
 
     let listener_task = tokio::spawn(core_events_listener(event_receiver, database, IS_LIVE));

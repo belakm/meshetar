@@ -2,6 +2,7 @@ use super::{error::AssetError, Asset, MarketEvent, MarketEventDetail};
 use crate::{
     database::Database,
     strategy::{Signal, Strategy},
+    utils::remove_vec_items_from_start,
 };
 use std::sync::Arc;
 use tokio::sync::{
@@ -10,15 +11,11 @@ use tokio::sync::{
 };
 use tracing::info;
 
-fn remove_items_from_start<T>(mut vec: Vec<T>, n: usize) -> Vec<T> {
-    vec.drain(0..n);
-    vec
-}
-
 pub async fn new_ticker(
     asset: Asset,
     database: Arc<Mutex<Database>>,
     last_n_candles: usize,
+    buffer_n_of_candles: usize,
 ) -> Result<UnboundedReceiver<MarketEvent>, AssetError> {
     let (tx, rx) = mpsc::unbounded_channel();
     let candles = database
@@ -29,7 +26,7 @@ pub async fn new_ticker(
     let skip_n_candles = candles.len() - last_n_candles;
 
     // take only specified number of candles
-    let candles = remove_items_from_start(candles, skip_n_candles);
+    let candles = remove_vec_items_from_start(candles, skip_n_candles);
 
     tokio::spawn(async move {
         let candles_copy = candles.clone();
@@ -37,9 +34,16 @@ pub async fn new_ticker(
             .first()
             .expect("No candles for backtesting :<")
             .open_time;
-        match Strategy::generate_backtest_signals(open_time, candles_copy, asset.clone()).await {
+        match Strategy::generate_backtest_signals(
+            open_time,
+            candles_copy,
+            asset.clone(),
+            buffer_n_of_candles,
+        )
+        .await
+        {
             Ok(Some(signals)) => {
-                let mut stream_candles = candles.iter().skip(50).enumerate();
+                let mut stream_candles = candles.iter().skip(buffer_n_of_candles).enumerate();
                 info!(
                     "Backtesting {} candles, with {} signals",
                     stream_candles.len(),

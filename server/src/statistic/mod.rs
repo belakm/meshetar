@@ -11,7 +11,7 @@ use self::{
     summary_pnl::{PnLReturnSummary, ProfitLossSummary},
 };
 use crate::portfolio::position::Position;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use prettytable::{row, Cell, Row, Table};
 use serde::{Deserialize, Serialize};
 
@@ -21,15 +21,18 @@ pub struct TradingSummary {
     pub pnl: ProfitLossSummary,
     pub drawdown: DrawdownSummary,
     pub tear_sheet: TearSheet,
+    pub starting_time: DateTime<Utc>,
 }
 
 impl TradingSummary {
-    pub fn init(config: StatisticConfig) -> Self {
+    pub fn init(config: StatisticConfig, starting_time: Option<DateTime<Utc>>) -> Self {
+        let starting_time = starting_time.unwrap_or_else(|| config.created_at);
         Self {
-            pnl_returns: PnLReturnSummary::new(),
+            pnl_returns: PnLReturnSummary::new(starting_time),
             pnl: ProfitLossSummary::new(),
             drawdown: DrawdownSummary::new(config.starting_equity),
             tear_sheet: TearSheet::new(config.risk_free_return),
+            starting_time,
         }
     }
     pub fn update(&mut self, position: &Position) {
@@ -50,16 +53,7 @@ pub struct StatisticConfig {
     pub starting_equity: f64,
     pub trading_days_per_year: usize,
     pub risk_free_return: f64,
-}
-
-pub fn calculate_trading_duration(start_time: &DateTime<Utc>, position: &Position) -> Duration {
-    match position.meta.exit_balance {
-        None => {
-            // Since Position is not exited, estimate duration w/ last_update_time
-            position.meta.update_time.signed_duration_since(*start_time)
-        }
-        Some(exit_balance) => exit_balance.time.signed_duration_since(*start_time),
-    }
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]

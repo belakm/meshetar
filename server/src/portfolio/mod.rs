@@ -42,18 +42,16 @@ pub struct Portfolio {
     core_id: Uuid,
     allocation_manager: Allocator,
     risk_manager: RiskEvaluator,
+    assets: Vec<Asset>,
+    trading_is_live: bool,
+    statistic_config: StatisticConfig,
 }
 
 impl Portfolio {
     pub fn builder() -> PortfolioBuilder {
         PortfolioBuilder::new()
     }
-    pub async fn bootstrap_database(
-        &self,
-        starting_cash: f64,
-        assets: Vec<Asset>,
-        statistic_config: StatisticConfig,
-    ) -> Result<(), PortfolioError> {
+    pub async fn bootstrap_database(&self, starting_cash: f64) -> Result<(), PortfolioError> {
         self.database.lock().await.set_balance(
             self.core_id,
             Balance {
@@ -62,17 +60,19 @@ impl Portfolio {
                 available: starting_cash,
             },
         )?;
-        let mut database = self.database.lock().await;
-        for asset in assets {
-            database
-                .set_statistics(asset, TradingSummary::init(statistic_config))
-                .map_err(PortfolioError::RepositoryInteraction)?;
-        }
         Ok(())
     }
+
+    pub async fn open_positions(&self) -> Result<Vec<Position>, PortfolioError> {
+        let mut database = self.database.lock().await;
+        let positions = database.get_all_open_positions(self.core_id)?;
+        Ok(positions)
+    }
+
     pub async fn generate_order(
         &mut self,
         signal: &Signal,
+        time_is_live: bool,
     ) -> Result<Option<OrderEvent>, PortfolioError> {
         // Determine the position_id & associated Option<Position> related to input SignalEvent
         let position_id = determine_position_id(self.core_id, &signal.asset);
@@ -90,8 +90,13 @@ impl Portfolio {
                 Some(net_signal) => net_signal,
             };
         // Construct mutable OrderEvent that can be modified by Allocation & Risk management
+        let order_time = if time_is_live {
+            Utc::now()
+        } else {
+            signal.time
+        };
         let mut order = OrderEvent {
-            time: Utc::now(),
+            time: order_time,
             asset: signal.asset.clone(),
             market_meta: signal.market_meta,
             decision: *signal_decision,
@@ -115,9 +120,39 @@ impl Portfolio {
     }
     pub async fn generate_exit_order(
         &mut self,
-        _signal: SignalForceExit,
+        signal: SignalForceExit,
+        live_trading: bool,
     ) -> Result<Option<OrderEvent>, PortfolioError> {
-        Ok(None)
+        // Determine PositionId associated with the SignalForceExit
+        let position_id = determine_position_id(self.core_id, &signal.asset);
+
+        // Retrieve Option<Position> associated with the PositionId
+        let position = match self.database.lock().await.get_open_position(&position_id)? {
+            None => {
+                info!(
+                    position_id = &*position_id,
+                    outcome = "no forced exit OrderEvent generated",
+                    "cannot generate forced exit OrderEvent for a Position that isn't open"
+                );
+                return Ok(None);
+            }
+            Some(position) => position,
+        };
+        let time = if live_trading {
+            Utc::now()
+        } else {
+            signal.time
+        };
+        Ok(Some(OrderEvent {
+            time,
+            asset: signal.asset,
+            market_meta: MarketMeta {
+                close: position.current_symbol_price,
+                time: position.meta.update_time,
+            },
+            decision: position.determine_exit_decision(),
+            quantity: 0.0 - position.quantity,
+        }))
     }
 
     pub async fn update_from_market(
@@ -154,13 +189,16 @@ impl Portfolio {
             Some(mut position) => {
                 let position_exit = position.exit(balance, fill)?;
                 generated_events.push(Event::PositionExit(position_exit));
+
                 balance.available += position.enter_value_gross
                     + position.realised_profit_loss
                     + position.enter_fees_total;
                 balance.total += position.realised_profit_loss;
+
                 let asset = position.asset.clone();
                 let mut stats = database.get_statistics(&asset)?;
                 stats.update(&position);
+
                 // Persist exited Position & Updated Market statistics in Repository
                 database.set_statistics(asset.clone(), stats)?;
                 database.set_exited_position(self.core_id, position)?;
@@ -172,21 +210,44 @@ impl Portfolio {
                 database.set_open_position(position)?;
             }
         };
+
         generated_events.push(Event::Balance(balance));
         database.set_balance(self.core_id, balance)?;
         Ok(generated_events)
     }
 
-    pub async fn set_statistics(
-        &mut self,
-        asset: Asset,
-        statistic: TradingSummary,
-    ) -> Result<(), DatabaseError> {
-        self.database.lock().await.set_statistics(asset, statistic)
-    }
-
     pub async fn get_statistics(&mut self, asset: &Asset) -> Result<TradingSummary, DatabaseError> {
         self.database.lock().await.get_statistics(asset)
+    }
+
+    pub async fn reset_statistics_with_time(
+        &mut self,
+        asset: &Asset,
+        starting_time: DateTime<Utc>,
+    ) -> Result<(), PortfolioError> {
+        let mut database = self.database.lock().await;
+        for asset in self.assets.clone() {
+            database
+                .set_statistics(
+                    asset,
+                    TradingSummary::init(self.statistic_config, Some(starting_time)),
+                )
+                .map_err(PortfolioError::RepositoryInteraction)?;
+        }
+        Ok(())
+    }
+
+    pub async fn init_statistics(
+        &self,
+        statistic_config: StatisticConfig,
+    ) -> Result<(), PortfolioError> {
+        let mut database = self.database.lock().await;
+        for asset in self.assets.clone() {
+            database
+                .set_statistics(asset, TradingSummary::init(statistic_config, None))
+                .map_err(PortfolioError::RepositoryInteraction)?;
+        }
+        Ok(())
     }
 }
 
@@ -224,6 +285,7 @@ pub struct PortfolioBuilder {
     starting_cash: Option<f64>,
     statistic_config: Option<StatisticConfig>,
     assets: Option<Vec<Asset>>,
+    trading_is_live: Option<bool>,
 }
 
 impl PortfolioBuilder {
@@ -236,6 +298,7 @@ impl PortfolioBuilder {
             starting_cash: None,
             statistic_config: None,
             assets: None,
+            trading_is_live: None,
         }
     }
     pub fn database(self, database: Arc<Mutex<Database>>) -> Self {
@@ -280,6 +343,13 @@ impl PortfolioBuilder {
             ..self
         }
     }
+    pub fn trading_is_live(self, value: bool) -> Self {
+        Self {
+            trading_is_live: Some(value),
+            ..self
+        }
+    }
+
     pub async fn build(self) -> Result<Portfolio, PortfolioError> {
         let portfolio = Portfolio {
             core_id: self
@@ -291,19 +361,24 @@ impl PortfolioBuilder {
             risk_manager: self
                 .risk_manager
                 .ok_or(PortfolioError::BuilderIncomplete("risk_manager"))?,
+            trading_is_live: self
+                .trading_is_live
+                .ok_or(PortfolioError::BuilderIncomplete("trading_is_live"))?,
+            assets: self
+                .assets
+                .ok_or(PortfolioError::BuilderIncomplete("assets"))?,
             database: self
                 .database
                 .ok_or(PortfolioError::BuilderIncomplete("database"))?,
+            statistic_config: self
+                .statistic_config
+                .ok_or(PortfolioError::BuilderIncomplete("statistic_config"))?,
         };
 
         portfolio
             .bootstrap_database(
                 self.starting_cash
                     .ok_or(PortfolioError::BuilderIncomplete("starting_cash"))?,
-                self.assets
-                    .ok_or(PortfolioError::BuilderIncomplete("assets"))?,
-                self.statistic_config
-                    .ok_or(PortfolioError::BuilderIncomplete("statistic_config"))?,
             )
             .await?;
 

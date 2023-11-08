@@ -2,12 +2,13 @@ pub mod error;
 pub mod execution;
 
 use crate::{
-    assets::{Asset, Feed, MarketFeed},
+    assets::{Asset, Feed, MarketEvent, MarketEventDetail, MarketFeed},
     core::Command,
     events::MessageTransmitter,
     events::{Event, EventTx},
     portfolio::Portfolio,
     strategy::Strategy,
+    IS_LIVE,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -34,11 +35,13 @@ pub struct SignalForceExit {
     pub asset: Asset,
 }
 impl SignalForceExit {
-    fn from(asset: Asset) -> Self {
-        SignalForceExit {
-            time: Utc::now(),
-            asset,
-        }
+    fn from(asset: Asset, time: Option<DateTime<Utc>>) -> Self {
+        let time = if time.is_some() {
+            time.unwrap()
+        } else {
+            Utc::now()
+        };
+        SignalForceExit { time, asset }
     }
 }
 
@@ -52,6 +55,7 @@ pub struct Trader {
     market_feed: MarketFeed,
     strategy: Strategy,
     execution: Execution,
+    trading_is_live: bool,
 }
 
 impl Trader {
@@ -61,15 +65,15 @@ impl Trader {
     pub async fn run(&mut self) -> Result<(), TraderError> {
         info!("Trader {} starting up.", self.asset);
         let _ = self.market_feed.run().await?;
-        info!("Trader {} starting event loop.", self.asset);
         let _ = tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        let mut backtest_stats_initialized = false;
         loop {
             while let Some(command) = self.receive_remote_command() {
                 match command {
                     Command::Terminate(_) => break,
                     Command::ExitPosition(asset) => {
                         self.event_queue
-                            .push_back(Event::SignalForceExit(SignalForceExit::from(asset)));
+                            .push_back(Event::SignalForceExit(SignalForceExit::from(asset, None)));
                     }
                     _ => continue,
                 }
@@ -89,11 +93,41 @@ impl Trader {
                     );
                     continue;
                 }
-                Feed::Finished => break,
+                Feed::Finished => {
+                    let positions = self.portfolio.lock().await.open_positions().await;
+                    match positions {
+                        Ok(positions) => {
+                            if positions.len() > 0 {
+                                let last_update = positions.last().unwrap().meta.update_time;
+                                self.event_queue.push_back(Event::SignalForceExit(
+                                    SignalForceExit::from(self.asset.clone(), Some(last_update)),
+                                ));
+                            } else {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            error!("{:?}", e)
+                        }
+                    }
+                }
             }
             while let Some(event) = self.event_queue.pop_front() {
                 match event {
                     Event::Market(market_event) => {
+                        if let MarketEventDetail::BacktestCandle((candle, _)) = &market_event.detail
+                        {
+                            if !backtest_stats_initialized {
+                                let start_time = candle.open_time;
+                                let _ = self
+                                    .portfolio
+                                    .lock()
+                                    .await
+                                    .reset_statistics_with_time(&self.asset, start_time)
+                                    .await;
+                            }
+                            backtest_stats_initialized = true;
+                        }
                         match self.strategy.generate_signal(&market_event).await {
                             Ok(Some(signal)) => {
                                 self.event_transmitter.send(Event::Signal(signal.clone()));
@@ -117,7 +151,13 @@ impl Trader {
                         }
                     }
                     Event::Signal(signal) => {
-                        match self.portfolio.lock().await.generate_order(&signal).await {
+                        match self
+                            .portfolio
+                            .lock()
+                            .await
+                            .generate_order(&signal, self.trading_is_live)
+                            .await
+                        {
                             Ok(order) => {
                                 if let Some(order) = order {
                                     self.event_transmitter.send(Event::Order(order.clone()));
@@ -132,7 +172,7 @@ impl Trader {
                             .portfolio
                             .lock()
                             .await
-                            .generate_exit_order(signal_force_exit)
+                            .generate_exit_order(signal_force_exit, self.trading_is_live)
                             .await
                         {
                             Ok(order) => {
@@ -145,7 +185,7 @@ impl Trader {
                         }
                     }
                     Event::Order(order) => {
-                        let fill = self.execution.generate_fill(&order)?;
+                        let fill = self.execution.generate_fill(&order, IS_LIVE)?;
                         self.event_transmitter.send(Event::Fill(fill.clone()));
                         self.event_queue.push_back(Event::Fill(fill));
                     }
@@ -205,7 +245,7 @@ pub struct TraderBuilder {
     portfolio: Option<Arc<Mutex<Portfolio>>>,
     strategy: Option<Strategy>,
     execution: Option<Execution>,
-    is_live: Option<bool>,
+    trading_is_live: Option<bool>,
 }
 impl TraderBuilder {
     pub fn new() -> TraderBuilder {
@@ -213,7 +253,7 @@ impl TraderBuilder {
             core_id: None,
             command_reciever: None,
             asset: None,
-            is_live: None,
+            trading_is_live: None,
             event_transmitter: None,
             portfolio: None,
             market_feed: None,
@@ -278,9 +318,9 @@ impl TraderBuilder {
         }
     }
 
-    pub fn is_live(self, value: bool) -> Self {
+    pub fn trading_is_live(self, value: bool) -> Self {
         Self {
-            is_live: Some(value),
+            trading_is_live: Some(value),
             ..self
         }
     }
@@ -310,6 +350,9 @@ impl TraderBuilder {
             execution: self
                 .execution
                 .ok_or(TraderError::BuilderIncomplete("execution"))?,
+            trading_is_live: self
+                .trading_is_live
+                .ok_or(TraderError::BuilderIncomplete("trading_is_live"))?,
         })
     }
 }
