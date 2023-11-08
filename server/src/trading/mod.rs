@@ -90,11 +90,22 @@ impl Trader {
                     continue;
                 }
                 Feed::Finished => {
-                    self.event_queue
-                        .push_back(Event::SignalForceExit(SignalForceExit::from(
-                            self.asset.clone(),
-                        )));
-                    break;
+                    info!("FINISHED FEED - closing open positions");
+                    let positions = self.portfolio.lock().await.open_positions().await;
+                    match positions {
+                        Ok(positions) => {
+                            if positions.len() > 0 {
+                                self.event_queue.push_back(Event::SignalForceExit(
+                                    SignalForceExit::from(self.asset.clone()),
+                                ));
+                            } else {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            error!("{:?}", e)
+                        }
+                    }
                 }
             }
             while let Some(event) = self.event_queue.pop_front() {

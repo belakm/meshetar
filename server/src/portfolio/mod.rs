@@ -70,6 +70,13 @@ impl Portfolio {
         }
         Ok(())
     }
+
+    pub async fn open_positions(&self) -> Result<Vec<Position>, PortfolioError> {
+        let mut database = self.database.lock().await;
+        let positions = database.get_all_open_positions(self.core_id)?;
+        Ok(positions)
+    }
+
     pub async fn generate_order(
         &mut self,
         signal: &Signal,
@@ -115,9 +122,34 @@ impl Portfolio {
     }
     pub async fn generate_exit_order(
         &mut self,
-        _signal: SignalForceExit,
+        signal: SignalForceExit,
     ) -> Result<Option<OrderEvent>, PortfolioError> {
-        Ok(None)
+        // Determine PositionId associated with the SignalForceExit
+        let position_id = determine_position_id(self.core_id, &signal.asset);
+
+        // Retrieve Option<Position> associated with the PositionId
+        let position = match self.database.lock().await.get_open_position(&position_id)? {
+            None => {
+                info!(
+                    position_id = &*position_id,
+                    outcome = "no forced exit OrderEvent generated",
+                    "cannot generate forced exit OrderEvent for a Position that isn't open"
+                );
+                return Ok(None);
+            }
+            Some(position) => position,
+        };
+
+        Ok(Some(OrderEvent {
+            time: Utc::now(),
+            asset: signal.asset,
+            market_meta: MarketMeta {
+                close: position.current_symbol_price,
+                time: position.meta.update_time,
+            },
+            decision: position.determine_exit_decision(),
+            quantity: 0.0 - position.quantity,
+        }))
     }
 
     pub async fn update_from_market(

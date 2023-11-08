@@ -241,7 +241,7 @@ impl Core {
                 asset.clone().to_owned()
             })
             .collect();
-        let final_positions = database.get_open_positions(self.id, assets);
+        let final_positions = database.get_all_open_positions(self.id);
         warn!("FINAL BALANCE: {:?}", final_balance);
         warn!("FINAL POSITIONS: {:?}", final_positions);
         // Generate average statistics across all markets using session's exited Positions

@@ -213,6 +213,26 @@ impl Database {
             .collect())
     }
 
+    pub fn get_all_open_positions(
+        &mut self,
+        core_id: Uuid,
+    ) -> Result<Vec<Position>, DatabaseError> {
+        Ok(self
+            .open_positions
+            .iter()
+            .filter(|(position_id, _)| position_id.contains(&core_id.to_string()))
+            .map(|(_, position)| Position::clone(position))
+            .collect())
+        // Ok(assets
+        //     .into_iter()
+        //     .filter_map(|asset| {
+        //         self.open_positions
+        //             .get(&determine_position_id(core_id, &asset))
+        //             .map(Position::clone)
+        //     })
+        //     .collect())
+    }
+
     pub fn remove_position(
         &mut self,
         position_id: &String,
