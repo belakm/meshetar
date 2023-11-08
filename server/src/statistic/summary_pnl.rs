@@ -217,12 +217,12 @@ impl TableBuilder for ProfitLossSummary {
             "Long Contracts",
             "Long PnL",
             "Long PnL Per Contract",
-            "Short Contracts",
-            "Short PnL",
-            "Short PnL Per Contract",
-            "Total Contracts",
-            "Total PnL",
-            "Total PnL Per Contract",
+            // "Short Contracts",
+            // "Short PnL",
+            // "Short PnL Per Contract",
+            // "Total Contracts",
+            // "Total PnL",
+            // "Total PnL Per Contract",
         ]
     }
 
@@ -231,12 +231,12 @@ impl TableBuilder for ProfitLossSummary {
             format!("{:.3}", self.long_contracts),
             format!("{:.3}", self.long_pnl),
             format!("{:.3}", self.long_pnl_per_contract),
-            format!("{:.3}", self.short_contracts),
-            format!("{:.3}", self.short_pnl),
-            format!("{:.3}", self.short_pnl_per_contract),
-            format!("{:.3}", self.total_contracts),
-            format!("{:.3}", self.total_pnl),
-            format!("{:.3}", self.total_pnl_per_contract),
+            // format!("{:.3}", self.short_contracts),
+            // format!("{:.3}", self.short_pnl),
+            // format!("{:.3}", self.short_pnl_per_contract),
+            // format!("{:.3}", self.total_contracts),
+            // format!("{:.3}", self.total_pnl),
+            // format!("{:.3}", self.total_pnl_per_contract),
         ]
     }
 }

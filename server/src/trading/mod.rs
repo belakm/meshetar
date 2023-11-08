@@ -89,7 +89,13 @@ impl Trader {
                     );
                     continue;
                 }
-                Feed::Finished => break,
+                Feed::Finished => {
+                    self.event_queue
+                        .push_back(Event::SignalForceExit(SignalForceExit::from(
+                            self.asset.clone(),
+                        )));
+                    break;
+                }
             }
             while let Some(event) = self.event_queue.pop_front() {
                 match event {
