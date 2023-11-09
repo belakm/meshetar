@@ -34,6 +34,7 @@ pub struct Position {
     pub current_value_gross: f64,
     pub unrealised_profit_loss: f64,
     pub realised_profit_loss: f64,
+    pub n_position_updates: i64,
 }
 
 impl Position {
@@ -104,6 +105,7 @@ impl Position {
             current_value_gross: fill.fill_value_gross,
             unrealised_profit_loss,
             realised_profit_loss: 0.0,
+            n_position_updates: 0,
         })
     }
     pub fn update(&mut self, market: &MarketEvent) -> Option<PositionUpdate> {
@@ -118,6 +120,7 @@ impl Position {
         self.current_symbol_price = close;
         self.current_value_gross = close * self.quantity.abs();
         self.unrealised_profit_loss = self.calculate_unrealised_profit_loss();
+        self.n_position_updates = self.n_position_updates + 1;
         Some(PositionUpdate::from(self))
     }
     pub fn exit(
@@ -161,6 +164,7 @@ pub struct PositionBuilder {
     pub current_value_gross: Option<f64>,
     pub unrealised_profit_loss: Option<f64>,
     pub realised_profit_loss: Option<f64>,
+    pub n_position_updates: Option<i64>,
 }
 
 impl PositionBuilder {
@@ -336,6 +340,7 @@ impl PositionBuilder {
             realised_profit_loss: self
                 .realised_profit_loss
                 .ok_or(PortfolioError::BuilderIncomplete("realised_profit_loss"))?,
+            n_position_updates: 0,
         })
     }
 }

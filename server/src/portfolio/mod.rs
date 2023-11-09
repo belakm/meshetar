@@ -182,9 +182,8 @@ impl Portfolio {
         let mut generated_events: Vec<Event> = Vec::with_capacity(2);
         let mut database = self.database.lock().await;
         let mut balance = database.get_balance(self.core_id)?;
-        balance.time = fill.time;
         let position_id = determine_position_id(self.core_id, &fill.asset);
-
+        balance.time = fill.time;
         match database.remove_position(&position_id)? {
             Some(mut position) => {
                 let position_exit = position.exit(balance, fill)?;
@@ -210,7 +209,6 @@ impl Portfolio {
                 database.set_open_position(position)?;
             }
         };
-
         generated_events.push(Event::Balance(balance));
         database.set_balance(self.core_id, balance)?;
         Ok(generated_events)

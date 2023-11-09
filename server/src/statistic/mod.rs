@@ -10,7 +10,7 @@ use self::{
     summary_drawdown::DrawdownSummary,
     summary_pnl::{PnLReturnSummary, ProfitLossSummary},
 };
-use crate::portfolio::position::Position;
+use crate::{portfolio::position::Position, utils::formatting::readable_duration};
 use chrono::{DateTime, Utc};
 use prettytable::{row, Cell, Row, Table};
 use serde::{Deserialize, Serialize};
@@ -162,4 +162,45 @@ pub fn combine(builders: Vec<(String, TradingSummary)>) -> Vec<Table> {
         });
 
     tables
+}
+
+pub fn exited_positions_table(positions: Vec<Position>) -> Table {
+    let mut table = Table::new();
+    let title_row = row![
+        "Asset",
+        // "enter",
+        // "exit",
+        "Quantity",
+        "Duration",
+        // "enter_fees_total",
+        // "exit_fees_total",
+        "enter_value_gross",
+        "exit_value_gross",
+        "enter_avg_price_gross",
+        "exit_avg_price_gross",
+        "current_symbol_price",
+        "realised_profit_loss",
+        "n_position_updates"
+    ];
+    table.add_row(title_row);
+    positions.iter().for_each(|position| {
+        let duration = readable_duration(position.meta.enter_time, position.meta.update_time);
+        table.add_row(row![
+            position.asset.to_string(),
+            // position.meta.enter_time,
+            // position.meta.update_time,
+            position.quantity,
+            duration,
+            // position.enter_fees_total,
+            // position.exit_fees_total,
+            position.enter_value_gross,
+            position.exit_value_gross,
+            position.enter_avg_price_gross,
+            position.exit_avg_price_gross,
+            position.current_symbol_price,
+            position.realised_profit_loss,
+            position.n_position_updates
+        ]);
+    });
+    table
 }

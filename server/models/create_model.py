@@ -134,7 +134,7 @@ sample_weights = np.exp(-decay_rate * (len(y_train) - y_train.index))
 history = model.fit(
     X_train, 
     y_train['target_encoded'],
-    epochs=100, 
+    epochs=200, 
     batch_size=86,
     validation_data=(X_test, y_test['target_encoded']),
     callbacks=[scheduler],
