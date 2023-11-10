@@ -18,8 +18,8 @@ import warnings
 import os
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 50)
-#while not os.path.basename(os.getcwd()) == 'meshetar/server':
-#    os.chdir('..')  # Move up one directory
+while not os.path.basename(os.getcwd()) == 'server':
+   os.chdir('..')  # Move up one directory
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
