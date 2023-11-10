@@ -102,9 +102,18 @@ impl Portfolio {
             decision: *signal_decision,
             quantity: 1.0,
         };
+
+        let max_value = self
+            .database
+            .lock()
+            .await
+            .get_balance(self.core_id)
+            .unwrap()
+            .available;
+
         // Manage OrderEvent size allocation
         self.allocation_manager
-            .allocate_order(&mut order, position, *signal_strength);
+            .allocate_order(&mut order, position, *signal_strength, max_value);
         // Manage global risk when evaluating OrderEvent - keep the same, refine or cancel
         Ok(self.risk_manager.evaluate_order(order))
     }

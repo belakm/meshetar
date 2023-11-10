@@ -23,12 +23,13 @@ pd.set_option('display.max_columns', 50)
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
+
 # %%
 #import os
 #print(os.path.abspath('./database.sqlite'))
 conn = sqlite3.connect('./database.sqlite')
 # cursor = sqliteConnection.cursor()
-query = """SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
+query = """SELECT open_time,
                 open,
                  high, 
                  low, 
@@ -70,7 +71,7 @@ klines.loc[peaks, 'signal'] = "sell"
 columns_not_to_predict = [
     'open_time', 
     'open',
-    'close', 
+    'close',
     'low', 
     'high', 
     'volume',
@@ -134,7 +135,7 @@ sample_weights = np.exp(-decay_rate * (len(y_train) - y_train.index))
 history = model.fit(
     X_train, 
     y_train['target_encoded'],
-    epochs=200, 
+    epochs=100, 
     batch_size=86,
     validation_data=(X_test, y_test['target_encoded']),
     callbacks=[scheduler],
@@ -205,9 +206,10 @@ conf_matrix = confusion_matrix(y_test['signal'], y_test['model_prediction'], lab
 
 # %%
 model.save("./models/neural_net_model")
-
+#
 # %%
 test_set_close = klines.loc[y_test.index, 'close']
+test_set_open_time = klines.loc[y_test.index, 'open_time']
 
 plt.plot(test_set_close, label='Actual Close Prices', color='blue')
 plt.plot(test_set_close.index[y_test['model_prediction'] == "buy"], 
@@ -230,7 +232,8 @@ plt.savefig('./static/historic_signals.svg', format='svg')
 # %%
 # Backtesting
 back_test = pd.DataFrame(
-    {'close': test_set_close, 
+    {'close': test_set_close,
+     'open_time': test_set_open_time,
      'returns' : np.log(test_set_close/test_set_close.shift(1)),
      'predicted_signal':  y_test['model_prediction']})
 back_test = back_test.reset_index()
@@ -244,25 +247,49 @@ back_test
 # %%
 current_stake = 0
 current_balance = initial_balance
+asset_quantity = 0
 
 for index, row in back_test.iterrows():
-    if row['position'] == 'buy' and current_balance == 0:
-        back_test.at[index, 'balance'] = 0
-        continue
-    elif row['position'] == 'buy' and current_balance != 0:
-        back_test.at[index, 'balance'] = 0
-        current_stake = current_balance
+
+    if index == 0: print(f"first candle: {row['open_time']}")
+
+    if row['position'] == 'buy' and current_balance > 0:
+        asset_quantity = current_balance / row['close']  # Buy as much as possible
         current_balance = 0
-        close_price_at_buy = back_test.at[index - 1, 'close']
-    elif row['position'] == 'sell' and current_stake == 0:
-        back_test.at[index, 'balance'] = current_balance
-        continue
-    elif row['position'] == 'sell' and current_stake != 0:
-        if index + 1 < len(back_test) and current_stake != 0:
-            current_stake = row['close']-close_price_at_buy + current_stake
-            back_test.at[index, 'balance'] = current_stake
-            current_balance = current_stake
-            current_stake = 0
+        print(f"buy at {row.open_time}")
+    elif row['position'] == 'sell' and asset_quantity > 0:
+        current_balance = asset_quantity * row['close']  # Sell all assets
+        asset_quantity = 0
+        print(f"sell at {row.open_time}")
+    back_test.at[index, 'balance'] = current_balance + (asset_quantity * row['close'])
+
+# Final balance accounting for any unsold assets
+final_balance = current_balance + (asset_quantity * back_test['close'].iloc[-1])
+
+print(f"Final balance: {final_balance:.2f}")
+
+# for index, row in back_test.iterrows():
+#     if (index == 0):
+#         print(f"Start time: {row.open_time}")
+#     if row['position'] == 'buy' and current_balance == 0:
+#         back_test.at[index, 'balance'] = 0
+#         continue
+#     elif row['position'] == 'buy' and current_balance != 0:
+#         print(f"buy at {row.open_time}")
+#         back_test.at[index, 'balance'] = 0
+#         current_stake = current_balance
+#         current_balance = 0
+#         close_price_at_buy = back_test.at[index - 1, 'close']
+#     elif row['position'] == 'sell' and current_stake == 0:
+#         back_test.at[index, 'balance'] = current_balance
+#         continue
+#     elif row['position'] == 'sell' and current_stake != 0:
+#         if index + 1 < len(back_test):
+#             print(f"sell at {row.open_time}")
+#             current_stake = row['close']-close_price_at_buy + current_stake
+#             back_test.at[index, 'balance'] = current_stake
+#             current_balance = current_stake
+#             current_stake = 0
 
 last_nonzero = back_test[back_test['balance']!= 0].iloc[-1]['balance']
 last_nonzero

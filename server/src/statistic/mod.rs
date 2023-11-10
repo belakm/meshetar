@@ -10,7 +10,10 @@ use self::{
     summary_drawdown::DrawdownSummary,
     summary_pnl::{PnLReturnSummary, ProfitLossSummary},
 };
-use crate::{portfolio::position::Position, utils::formatting::readable_duration};
+use crate::{
+    portfolio::position::Position,
+    utils::formatting::{dt_to_readable, readable_duration},
+};
 use chrono::{DateTime, Utc};
 use prettytable::{row, Cell, Row, Table};
 use serde::{Deserialize, Serialize};
@@ -112,7 +115,6 @@ pub trait TableBuilder {
     }
     fn table_with<T: TableBuilder>(&self, id_cell: &str, another: (T, &str)) -> Table {
         let mut table = Table::new();
-
         let mut titles = self.titles();
         titles.insert_cell(0, Cell::new(""));
         table.set_titles(titles);
@@ -135,6 +137,17 @@ pub fn combine(builders: Vec<(String, TradingSummary)>) -> Vec<Table> {
         .into_iter()
         .enumerate()
         .for_each(|(row_index, (id, trading_summary))| {
+            // Insert rows for each table
+            tables[0].add_row(trading_summary.pnl_returns.row());
+            tables[1].add_row(trading_summary.tear_sheet.row());
+            tables[2].add_row(trading_summary.drawdown.row());
+            tables[3].add_row(trading_summary.pnl.row());
+            for table in tables.iter_mut() {
+                table
+                    .get_mut_row(row_index)
+                    .unwrap()
+                    .insert_cell(0, Cell::new(&id));
+            }
             if row_index == 0 {
                 let mut rows = Vec::with_capacity(4);
                 rows.push(trading_summary.pnl_returns.titles());
@@ -142,22 +155,9 @@ pub fn combine(builders: Vec<(String, TradingSummary)>) -> Vec<Table> {
                 rows.push(trading_summary.drawdown.titles());
                 rows.push(trading_summary.pnl.titles());
                 for (index, row) in rows.iter_mut().enumerate() {
-                    row.insert_cell(0, Cell::new("Asset"));
+                    //row.insert_cell(0, Cell::new("Asset"));
                     tables[index].set_titles(row.to_owned())
                 }
-            }
-
-            // Insert rows for each table
-            tables[0].add_row(trading_summary.pnl_returns.row());
-            tables[1].add_row(trading_summary.tear_sheet.row());
-            tables[2].add_row(trading_summary.drawdown.row());
-            tables[3].add_row(trading_summary.pnl.row());
-
-            for table in tables.iter_mut() {
-                table
-                    .get_mut_row(row_index)
-                    .unwrap()
-                    .insert_cell(0, Cell::new(&id));
             }
         });
 
@@ -167,9 +167,9 @@ pub fn combine(builders: Vec<(String, TradingSummary)>) -> Vec<Table> {
 pub fn exited_positions_table(positions: Vec<Position>) -> Table {
     let mut table = Table::new();
     let title_row = row![
-        "Asset",
-        // "enter",
-        // "exit",
+        //"Asset",
+        "position enter",
+        "position exit",
         "Quantity",
         "Duration",
         // "enter_fees_total",
@@ -180,15 +180,18 @@ pub fn exited_positions_table(positions: Vec<Position>) -> Table {
         "exit_avg_price_gross",
         "current_symbol_price",
         "realised_profit_loss",
-        "n_position_updates"
+        "unrealised_profit_loss",
+        // "n_position_updates"
     ];
-    table.add_row(title_row);
+    table.set_titles(title_row);
     positions.iter().for_each(|position| {
         let duration = readable_duration(position.meta.enter_time, position.meta.update_time);
+        let position_enter = dt_to_readable(position.meta.enter_time);
+        let position_exit = dt_to_readable(position.meta.update_time);
         table.add_row(row![
             position.asset.to_string(),
-            // position.meta.enter_time,
-            // position.meta.update_time,
+            position_enter,
+            position_exit,
             position.quantity,
             duration,
             // position.enter_fees_total,
@@ -199,7 +202,8 @@ pub fn exited_positions_table(positions: Vec<Position>) -> Table {
             position.exit_avg_price_gross,
             position.current_symbol_price,
             position.realised_profit_loss,
-            position.n_position_updates
+            position.unrealised_profit_loss,
+            //position.n_position_updates
         ]);
     });
     table

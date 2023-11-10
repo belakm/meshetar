@@ -11,7 +11,7 @@ use crate::{
 use chrono::Duration;
 use error::CoreError;
 use prettytable::Table;
-use std::{collections::HashMap, fs::File, sync::Arc};
+use std::{collections::HashMap, fs::File, io::Write, sync::Arc};
 use tokio::sync::{
     mpsc::{self, Receiver},
     Mutex,
@@ -96,15 +96,20 @@ impl Core {
 
         // File to print out the statistics
         let mut out = File::create("summary.html").unwrap();
+        let css_content = std::fs::read_to_string("summary.css").unwrap();
+        writeln!(out, "<style>{}</style>", css_content).unwrap();
         let (overall_stats_tables, exited_trades_table) = self.generate_session_summary().await?;
         overall_stats_tables.iter().for_each(|table| {
             let _ = table.print_html(&mut out);
-            let _ = table.printstd();
+            // let _ = table.printstd();
         });
         let _ = exited_trades_table.print_html(&mut out);
 
+        warn!("\n\n\nCheck summary.html for backtesting stats\n\n");
+
         Ok(())
     }
+
     async fn fetch_history(&mut self, n_days: i64) -> mpsc::Receiver<bool> {
         let assets: Vec<Asset> = self
             .traders
@@ -128,7 +133,7 @@ impl Core {
             for handle in handles {
                 match handle.1.await {
                     Ok(candles) => {
-                        database.lock().await.add_candles(handle.0, candles).await;
+                        let _ = database.lock().await.add_candles(handle.0, candles).await;
                     }
                     Err(err) => {
                         error!(
@@ -263,7 +268,7 @@ impl Core {
             .map(|(asset, summary)| (asset.to_string(), summary))
             .collect();
 
-        let mut overall_stats_tables = crate::statistic::combine(
+        let overall_stats_tables = crate::statistic::combine(
             stats_per_market
                 .into_iter()
                 .chain([("Total".to_owned(), statistics_summary)])

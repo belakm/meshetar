@@ -22,7 +22,7 @@ pub fn timestamp_to_dt(timestamp: i64) -> DateTime<Utc> {
 }
 
 pub fn dt_to_readable(dt: DateTime<Utc>) -> String {
-    dt.with_timezone(&Local)
+    dt.with_timezone(&Utc)
         .format(&DATETIME_FORMAT_SHAPE)
         .to_string()
 }
