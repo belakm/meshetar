@@ -11,7 +11,7 @@ use crate::{
 use chrono::Duration;
 use error::CoreError;
 use prettytable::Table;
-use std::{collections::HashMap, fs::File, sync::Arc};
+use std::{collections::HashMap, fs::File, io::Write, sync::Arc};
 use tokio::sync::{
     mpsc::{self, Receiver},
     Mutex,
@@ -37,7 +37,6 @@ pub struct Core {
     statistics_config: StatisticConfig,
     traders: Vec<Trader>,
     n_days_history_fetch: i64,
-    trading_is_live: bool,
 }
 
 impl Core {
@@ -49,17 +48,19 @@ impl Core {
 impl Core {
     pub async fn run(mut self) -> Result<(), CoreError> {
         info!("Core {} is starting up.", &self.id);
-        let mut fetching_stopped = self.fetch_history(self.n_days_history_fetch).await;
-        loop {
-            tokio::select! {
-                _ = fetching_stopped.recv() => {
-                    self
-                    .portfolio
-                    .lock()
-                    .await
-                    .init_statistics(self.statistics_config)
-                    .await;
-                    break;
+        if self.n_days_history_fetch > 0 {
+            let mut fetching_stopped = self.fetch_history(self.n_days_history_fetch).await;
+            loop {
+                tokio::select! {
+                    _ = fetching_stopped.recv() => {
+                        let _ = self
+                        .portfolio
+                        .lock()
+                        .await
+                        .init_statistics(self.statistics_config)
+                        .await;
+                        break;
+                    }
                 }
             }
         }
@@ -95,14 +96,20 @@ impl Core {
 
         // File to print out the statistics
         let mut out = File::create("summary.html").unwrap();
-        let _print_statistics = self.generate_session_summary().await?;
-        _print_statistics.iter().for_each(|table| {
+        let css_content = std::fs::read_to_string("summary.css").unwrap();
+        writeln!(out, "<style>{}</style>", css_content).unwrap();
+        let (overall_stats_tables, exited_trades_table) = self.generate_session_summary().await?;
+        overall_stats_tables.iter().for_each(|table| {
             let _ = table.print_html(&mut out);
-            let _ = table.printstd();
+            // let _ = table.printstd();
         });
+        let _ = exited_trades_table.print_html(&mut out);
+
+        warn!("\n\n\nCheck summary.html for backtesting stats\n\n");
 
         Ok(())
     }
+
     async fn fetch_history(&mut self, n_days: i64) -> mpsc::Receiver<bool> {
         let assets: Vec<Asset> = self
             .traders
@@ -126,7 +133,7 @@ impl Core {
             for handle in handles {
                 match handle.1.await {
                     Ok(candles) => {
-                        database.lock().await.add_candles(handle.0, candles).await;
+                        let _ = database.lock().await.add_candles(handle.0, candles).await;
                     }
                     Err(err) => {
                         error!(
@@ -206,7 +213,7 @@ impl Core {
             );
         }
     }
-    async fn generate_session_summary(self) -> Result<Vec<Table>, CoreError> {
+    async fn generate_session_summary(self) -> Result<(Vec<Table>, Table), CoreError> {
         // Fetch statistics for each Market
 
         let assets: Vec<_> = self.command_transmitters.into_keys().collect();
@@ -253,32 +260,22 @@ impl Core {
         warn!("FINAL BALANCE: {:?}", final_balance);
 
         // Generate average statistics across all markets using session's exited Positions
-        database
-            .get_exited_positions(self.id)
-            .map(|exited_positions| {
-                let _ = statistics_summary.generate_summary(&exited_positions);
-            })
-            .unwrap_or_else(|error| {
-                warn!(
-                    ?error,
-                    why = "failed to get exited Positions from Portfolio's repository",
-                    "failed to generate Statistics summary for trading session"
-                );
-            });
-
+        let exited_positions = database.get_exited_positions(self.id)?;
+        statistics_summary.generate_summary(&exited_positions);
+        let exited_positions_table = crate::statistic::exited_positions_table(exited_positions);
         let stats_per_market: Vec<_> = stats_per_market
             .into_iter()
             .map(|(asset, summary)| (asset.to_string(), summary))
             .collect();
 
-        let tables = crate::statistic::combine(
+        let overall_stats_tables = crate::statistic::combine(
             stats_per_market
                 .into_iter()
                 .chain([("Total".to_owned(), statistics_summary)])
                 .collect(),
         );
 
-        Ok(tables)
+        Ok((overall_stats_tables, exited_positions_table))
     }
 }
 
@@ -292,7 +289,6 @@ pub struct CoreBuilder {
     traders: Option<Vec<Trader>>,
     statistics_config: Option<StatisticConfig>,
     n_days_history_fetch: Option<i64>,
-    trading_is_live: Option<bool>,
 }
 
 impl CoreBuilder {
@@ -307,7 +303,6 @@ impl CoreBuilder {
             traders: None,
             statistics_config: None,
             n_days_history_fetch: None,
-            trading_is_live: None,
         }
     }
     pub fn id(self, id: Uuid) -> Self {
@@ -364,13 +359,6 @@ impl CoreBuilder {
             ..self
         }
     }
-    pub fn trading_is_live(self, value: bool) -> Self {
-        CoreBuilder {
-            trading_is_live: Some(value),
-            ..self
-        }
-    }
-
     pub fn build(self) -> Result<Core, CoreError> {
         let binance_client = self
             .binance_client
@@ -400,9 +388,6 @@ impl CoreBuilder {
             n_days_history_fetch: self
                 .n_days_history_fetch
                 .ok_or(CoreError::BuilderIncomplete("n_days_history_fetch"))?,
-            trading_is_live: self
-                .trading_is_live
-                .ok_or(CoreError::BuilderIncomplete("trading_is_live"))?,
         };
         Ok(core)
     }

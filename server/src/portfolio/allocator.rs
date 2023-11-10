@@ -12,9 +12,11 @@ impl Allocator {
         order: &mut OrderEvent,
         position: Option<&Position>,
         signal_strength: SignalStrength,
+        max_value: f64,
     ) {
         // Calculate exact order_size, then round it to a more appropriate decimal place
-        let default_order_size = self.default_order_value / order.market_meta.close;
+        // let default_order_size = self.default_order_value / order.market_meta.close;
+        let default_order_size = max_value / order.market_meta.close;
         let default_order_size = (default_order_size * 10000.0).floor() / 10000.0;
 
         match order.decision {

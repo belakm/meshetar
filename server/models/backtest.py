@@ -21,9 +21,11 @@ def backtest(candle_time=None):
 
     #%%
     conn = sqlite3.connect('./database.sqlite')
+    time_query = f"AND open_time >= \"{candle_time}\"" if candle_time else ""
+    print(time_query)
     # cursor = sqliteConnection.cursor()
-    query = """
-    SELECT datetime(open_time / 1000, 'unixepoch') AS open_time,
+    query = f"""
+    SELECT open_time,
     open,
     high, 
     low, 
@@ -31,6 +33,7 @@ def backtest(candle_time=None):
     volume
     FROM candles
     WHERE asset = 'BTCUSDT'
+    {time_query}
     ORDER BY open_time DESC
     LIMIT 1440;"""
 
@@ -44,6 +47,11 @@ def backtest(candle_time=None):
                                     high = "high",
                                     fillna=True).dropna()
     #%%
+
+    # Store the 'open_time' column
+    open_time_data = klines['open_time'].copy()
+    close_data = klines['close'].copy()
+
 
     columns_not_to_predict = [
         'open_time', 
@@ -79,5 +87,43 @@ def backtest(candle_time=None):
         else:
             return "hold"
     cut_predictions['model_prediction'] = cut_predictions.apply(set_model_prediction, axis=1).astype(str)
-    return(cut_predictions['model_prediction'].tolist())
 
+    # Merge 'open_time' with the predictions
+    cut_predictions['open_time'] = open_time_data.reset_index(drop=True)
+    cut_predictions['close'] = close_data.reset_index(drop=True)
+    
+    # Return combined data
+    # combined_predictions = list(zip(cut_predictions['open_time'], cut_predictions['model_prediction'], cut_predictions['close']))
+    combined_predictions = list(zip(cut_predictions['open_time'], cut_predictions['model_prediction'])) 
+
+    # Revert order
+    return combined_predictions[::-1]
+
+# predictions = backtest("2023-11-08T11:22:00+00:00")
+#
+# initial_balance = 1000
+# current_balance = initial_balance
+# current_stake = 0
+# close_price_at_buy = 0
+#
+# for time, action, close in predictions:
+#     if action == 'buy' and current_stake == 0:
+#         print(f"Buy at {time}")
+#         # Spend the entire current balance to buy at the close price
+#         current_stake = current_balance / close
+#         current_balance = 0
+#         close_price_at_buy = close 
+#     elif action == 'sell' and current_stake != 0:
+#         print(f"Sell at {time}")
+#         # Sell all the stake at the current close price
+#         current_balance = current_stake * close
+#         current_stake = 0
+#
+# # If the final action was a buy, sell at the last price to realize the profit/loss
+# if current_stake != 0:
+#     current_balance = current_stake * predictions[-1][2]
+#     current_stake = 0
+#
+# final_balance = current_balance
+# print(f"Initial balance: {initial_balance}")
+# print(f"Final balance: {final_balance}")

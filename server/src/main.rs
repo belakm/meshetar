@@ -25,7 +25,7 @@ use rocket::{
     http::Status,
     Error as RocketError, Request, Response,
 };
-use statistic::{StatisticConfig, TradingSummary};
+use statistic::StatisticConfig;
 use std::{collections::HashMap, sync::Arc};
 use strategy::Strategy;
 use thiserror::Error;
@@ -38,7 +38,7 @@ use uuid::Uuid;
 
 const IS_LIVE: bool = false;
 const BACKTEST_LAST_N_CANDLES: usize = 1490;
-const FETCH_N_DAYS_HISTORY: i64 = 2;
+const FETCH_N_DAYS_HISTORY: i64 = 0;
 
 pub struct CORS;
 
@@ -186,7 +186,6 @@ async fn run() -> Result<(), MainError> {
         .database(database.clone())
         .statistics_config(statistic_config)
         .n_days_history_fetch(FETCH_N_DAYS_HISTORY)
-        .trading_is_live(IS_LIVE)
         .build()?;
 
     let listener_task = tokio::spawn(core_events_listener(event_receiver, database, IS_LIVE));

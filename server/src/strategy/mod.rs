@@ -118,20 +118,24 @@ impl Strategy {
         let pyscript = include_str!("../../models/backtest.py");
         let args = (open_time.to_rfc3339(),);
         let model_output = run_backtest(pyscript, args)?;
-        let signals: Vec<HashMap<Decision, SignalStrength>> = model_output
-            .iter()
-            .map(|signal| generate_signals_map(&signal))
-            .collect();
-        if signals.len() == 0 {
-            warn!("Backtest - no signals produced, check input.");
-            return Ok(None);
+        let candles_that_were_analyzed = remove_vec_items_from_start(candles, 0);
+
+        info!("FIRST CANDLE {:?}", candles_that_were_analyzed.first());
+
+        let mut candles_with_signals: Vec<(Candle, HashMap<Decision, SignalStrength>)> = Vec::new();
+        for candle in candles_that_were_analyzed {
+            let raw_signal = model_output
+                .iter()
+                .find(|(_, datetime)| datetime == &candle.open_time);
+            let signal_map = match raw_signal {
+                Some(raw_signal) => generate_signals_map(&raw_signal.0),
+                None => generate_signals_map("hold"),
+            };
+            candles_with_signals.push((candle, signal_map));
         }
-        let candles_that_were_analyzed = remove_vec_items_from_start(candles, buffer_n_of_candles);
-        let signals: Vec<Option<Signal>> = signals
+        let signals: Vec<Option<Signal>> = candles_with_signals
             .iter()
-            .enumerate()
-            .map(|(index, signal_map)| {
-                let candle = candles_that_were_analyzed.get(index).unwrap();
+            .map(|(candle, signal_map)| {
                 if signal_map.len() == 0 {
                     None
                 } else {
@@ -177,11 +181,19 @@ fn run_candle(script: &str, args: (String,)) -> PyResult<String> {
     Ok(result?)
 }
 
-fn run_backtest(script: &str, args: (String,)) -> PyResult<Vec<String>> {
-    let result: PyResult<Vec<String>> = Python::with_gil(|py| {
+fn run_backtest(script: &str, args: (String,)) -> PyResult<Vec<(String, DateTime<Utc>)>> {
+    let result: PyResult<Vec<_>> = Python::with_gil(|py| {
         let activators = PyModule::from_code(py, script, "activators.py", "activators")?;
-        let prediction: Vec<String> = activators.getattr("backtest")?.call1(args)?.extract()?;
-        Ok(prediction)
+        let signals: Vec<(String, String)> =
+            activators.getattr("backtest")?.call1(args)?.extract()?;
+        let mut parsed_signals: Vec<(String, DateTime<Utc>)> = Vec::new();
+        for (time, signal) in signals {
+            let datetime = DateTime::parse_from_rfc3339(&time)
+                .unwrap()
+                .with_timezone(&Utc);
+            parsed_signals.push((signal, datetime));
+        }
+        Ok(parsed_signals)
     });
     Ok(result?)
 }
