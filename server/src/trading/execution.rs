@@ -36,18 +36,19 @@ impl Execution {
         live_time: bool,
     ) -> Result<FillEvent, TraderError> {
         let fill_time = if live_time { Utc::now() } else { order.time };
-        Ok(FillEvent {
-            time: fill_time,
-            asset: order.asset.clone(),
-            market_meta: order.market_meta,
-            decision: order.decision,
-            quantity: order.quantity,
-            fill_value_gross: order.quantity.abs() * order.market_meta.close,
-            fees: Fees {
+        let fill_event = FillEvent::builder()
+            .time(fill_time)
+            .asset(order.asset.clone())
+            .market_meta(order.market_meta)
+            .decision(order.decision)
+            .quantity(order.quantity)
+            .fill_value_gross(order.quantity.abs() * order.market_meta.close)
+            .fees(Fees {
                 exchange: self.exchange_fee,
                 slippage: 0.0,
-            },
-        })
+            })
+            .build()?;
+        Ok(fill_event)
     }
 }
 
@@ -63,8 +64,6 @@ pub struct FillEvent {
 }
 
 impl FillEvent {
-    pub const EVENT_TYPE: &'static str = "Fill";
-
     /// Returns a [`FillEventBuilder`] instance.
     pub fn builder() -> FillEventBuilder {
         FillEventBuilder::new()
@@ -125,6 +124,13 @@ impl FillEventBuilder {
     pub fn fees(self, value: Fees) -> Self {
         Self {
             fees: Some(value),
+            ..self
+        }
+    }
+
+    pub fn market_meta(self, value: MarketMeta) -> Self {
+        Self {
+            market_meta: Some(value),
             ..self
         }
     }
