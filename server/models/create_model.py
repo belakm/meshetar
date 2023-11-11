@@ -36,7 +36,7 @@ query = """SELECT open_time,
                  close, 
                  volume
           FROM candles 
-          WHERE asset = 'BTCUSDT';"""
+          WHERE asset = 'ETHBTC';"""
 
 # %%
 klines = pd.read_sql_query(query, conn)
@@ -233,7 +233,7 @@ plt.savefig('./static/historic_signals.svg', format='svg')
 # %%
 # Backtesting
 back_test = pd.DataFrame(
-    {'close': test_set_c~/.local/state/nvim/swap//%home%mico%algo%meshetar%server%models%create_model.py.swplose,
+    {'close': test_set_close,
      'open_time': test_set_open_time,
      'returns' : np.log(test_set_close/test_set_close.shift(1)),
      'predicted_signal':  y_test['model_prediction']})

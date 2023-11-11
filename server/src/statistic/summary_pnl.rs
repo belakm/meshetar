@@ -96,12 +96,12 @@ impl TableBuilder for PnLReturnSummary {
             wins,
             self.losses.count,
             self.duration.num_days().to_string(),
-            format!("{:.3}", self.trades_per_day),
-            format!("{:.3}", self.total.mean),
-            format!("{:.3}", self.total.dispersion.std_dev),
-            format!("{:.3}", self.losses.mean),
-            format!("{:.3}", self.total.dispersion.range.high),
-            format!("{:.3}", self.total.dispersion.range.low),
+            format!("{:.8}", self.trades_per_day),
+            format!("{:.8}", self.total.mean),
+            format!("{:.8}", self.total.dispersion.std_dev),
+            format!("{:.8}", self.losses.mean),
+            format!("{:.8}", self.total.dispersion.range.high),
+            format!("{:.8}", self.total.dispersion.range.low),
         ]
     }
 }

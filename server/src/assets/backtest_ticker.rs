@@ -23,6 +23,9 @@ pub async fn new_ticker(
         .await
         .fetch_all_candles(asset.clone())
         .await?;
+
+    info!("debug {}{}", candles.len(), last_n_candles);
+
     let skip_n_candles = candles.len() - last_n_candles;
 
     // take only specified number of candles

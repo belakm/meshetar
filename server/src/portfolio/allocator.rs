@@ -17,7 +17,7 @@ impl Allocator {
         // Calculate exact order_size, then round it to a more appropriate decimal place
         // let default_order_size = self.default_order_value / order.market_meta.close;
         let default_order_size = max_value / order.market_meta.close;
-        let default_order_size = (default_order_size * 10000.0).floor() / 10000.0;
+        let default_order_size = (default_order_size * 10000000.0).floor() / 10000000.0;
 
         match order.decision {
             // Entry
