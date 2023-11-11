@@ -9,7 +9,6 @@ mod assets;
 mod core;
 mod database;
 mod events;
-mod plotting;
 mod portfolio;
 mod statistic;
 mod strategy;
@@ -151,7 +150,6 @@ async fn run() -> Result<(), MainError> {
             .starting_cash(STARTING_EQUITY)
             .assets(vec![DEFAULT_ASSET])
             .statistic_config(statistic_config.clone())
-            .trading_is_live(IS_LIVE)
             .build()
             .await?,
     ));
@@ -201,8 +199,6 @@ async fn run() -> Result<(), MainError> {
     if let Err(listener_error) = listener_result {
         error!("{}", listener_error);
     }
-
-    //let _3 = tokio::spawn(async { loop {} }).await;
 
     // rocket::build()
     //     .attach(CORS)

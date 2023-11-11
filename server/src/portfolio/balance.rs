@@ -51,13 +51,6 @@ impl Default for Balance {
 }
 
 impl Balance {
-    pub fn new(time: DateTime<Utc>, total: f64, available: f64) -> Self {
-        Self {
-            time,
-            total,
-            available,
-        }
-    }
     pub fn balance_id(core_id: Uuid) -> BalanceId {
         format!("{}_balance", core_id)
     }

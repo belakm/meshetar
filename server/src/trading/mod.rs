@@ -2,7 +2,7 @@ pub mod error;
 pub mod execution;
 
 use crate::{
-    assets::{Asset, Feed, MarketEvent, MarketEventDetail, MarketFeed},
+    assets::{Asset, Feed, MarketEventDetail, MarketFeed},
     core::Command,
     events::MessageTransmitter,
     events::{Event, EventTx},
@@ -25,9 +25,6 @@ pub enum Pair {
     BTCUSDT,
     ETHBTC,
 }
-
-pub mod meshetar;
-pub mod routes;
 
 #[derive(Clone, Eq, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
 pub struct SignalForceExit {
