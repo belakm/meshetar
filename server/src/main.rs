@@ -1,3 +1,8 @@
+const IS_LIVE: bool = false;
+const BACKTEST_LAST_N_CANDLES: usize = 8640;
+const FETCH_N_DAYS_HISTORY: i64 = 0;
+const EXCHANGE_FEE: f64 = 0.001;
+
 mod assets;
 mod core;
 mod database;
@@ -35,10 +40,6 @@ use tracing::{error, info};
 use trading::{error::TraderError, execution::Execution, Trader};
 use utils::binance_client::{BinanceClient, BinanceClientError};
 use uuid::Uuid;
-
-const IS_LIVE: bool = false;
-const BACKTEST_LAST_N_CANDLES: usize = 1490;
-const FETCH_N_DAYS_HISTORY: i64 = 0;
 
 pub struct CORS;
 
@@ -172,7 +173,7 @@ async fn run() -> Result<(), MainError> {
                 BACKTEST_LAST_N_CANDLES,
             ))
             .strategy(Strategy::new(Asset::BTCUSDT))
-            .execution(Execution::new())
+            .execution(Execution::new(EXCHANGE_FEE))
             .build()?,
     );
 

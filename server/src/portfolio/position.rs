@@ -84,7 +84,7 @@ impl Position {
             update_time: fill.time,
             exit_balance: None,
         };
-        let enter_fees_total = fill.fees.calculate_total_fees();
+        let enter_fees_total = fill.fees.calculate_total_fees(fill.fill_value_gross);
         let enter_avg_price_gross = Position::calculate_avg_price_gross(fill);
         let unrealised_profit_loss = -enter_fees_total * 2.0;
         Ok(Position {
@@ -132,7 +132,7 @@ impl Position {
             return Err(PortfolioError::CannotExitPositionWithEntryFill);
         }
         self.exit_fees = fill.fees;
-        self.exit_fees_total = fill.fees.calculate_total_fees();
+        self.exit_fees_total = fill.fees.calculate_total_fees(fill.fill_value_gross);
         self.exit_value_gross = fill.fill_value_gross;
         self.exit_avg_price_gross = Position::calculate_avg_price_gross(fill);
         self.realised_profit_loss = self.calculate_realised_profit_loss();

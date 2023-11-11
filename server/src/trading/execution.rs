@@ -7,7 +7,9 @@ use crate::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-pub struct Execution {}
+pub struct Execution {
+    exchange_fee: f64,
+}
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, Default, Deserialize, Serialize)]
 pub struct Fees {
@@ -16,8 +18,8 @@ pub struct Fees {
 }
 
 impl Fees {
-    pub fn calculate_total_fees(&self) -> f64 {
-        self.exchange + self.slippage
+    pub fn calculate_total_fees(&self, gross: f64) -> f64 {
+        (self.exchange * gross) + self.slippage
     }
 }
 
@@ -25,8 +27,8 @@ impl Fees {
 pub type FeeAmount = f64;
 
 impl Execution {
-    pub fn new() -> Self {
-        Execution {}
+    pub fn new(exchange_fee: f64) -> Self {
+        Execution { exchange_fee }
     }
     pub fn generate_fill(
         &self,
@@ -42,7 +44,7 @@ impl Execution {
             quantity: order.quantity,
             fill_value_gross: order.quantity.abs() * order.market_meta.close,
             fees: Fees {
-                exchange: 0.0,
+                exchange: self.exchange_fee,
                 slippage: 0.0,
             },
         })

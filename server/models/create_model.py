@@ -119,7 +119,7 @@ model = tf.keras.Sequential([
 ])
 model.summary()
 
-#%%
+#%%55
 model.compile(
     optimizer='adam',
     loss='sparse_categorical_crossentropy', 
@@ -137,6 +137,7 @@ history = model.fit(
     y_train['target_encoded'],
     epochs=100, 
     batch_size=86,
+    # batch_size=86,
     validation_data=(X_test, y_test['target_encoded']),
     callbacks=[scheduler],
     sample_weight=sample_weights,
@@ -232,7 +233,7 @@ plt.savefig('./static/historic_signals.svg', format='svg')
 # %%
 # Backtesting
 back_test = pd.DataFrame(
-    {'close': test_set_close,
+    {'close': test_set_c~/.local/state/nvim/swap//%home%mico%algo%meshetar%server%models%create_model.py.swplose,
      'open_time': test_set_open_time,
      'returns' : np.log(test_set_close/test_set_close.shift(1)),
      'predicted_signal':  y_test['model_prediction']})

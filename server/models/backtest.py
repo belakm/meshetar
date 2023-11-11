@@ -35,7 +35,7 @@ def backtest(candle_time=None):
     WHERE asset = 'BTCUSDT'
     {time_query}
     ORDER BY open_time DESC
-    LIMIT 1440;"""
+    LIMIT 8640;"""
 
     klines = pd.read_sql_query(query, conn)
     # Make predictions using the loaded model
