@@ -36,7 +36,7 @@ query = """SELECT open_time,
                  close, 
                  volume
           FROM candles 
-          WHERE asset = 'ETHBTC';"""
+          WHERE asset = 'BTCUSDT';"""
 
 # %%
 klines = pd.read_sql_query(query, conn)
@@ -119,7 +119,7 @@ model = tf.keras.Sequential([
 ])
 model.summary()
 
-#%%55
+#%%
 model.compile(
     optimizer='adam',
     loss='sparse_categorical_crossentropy', 
@@ -137,7 +137,6 @@ history = model.fit(
     y_train['target_encoded'],
     epochs=100, 
     batch_size=86,
-    # batch_size=86,
     validation_data=(X_test, y_test['target_encoded']),
     callbacks=[scheduler],
     sample_weight=sample_weights,
@@ -307,4 +306,64 @@ last_nonzero = back_test[back_test['balance']!= 0].iloc[-1]['balance']
 balance_difference = last_nonzero - back_test['balance'].iloc[0] 
 pct_change = (last_nonzero/initial_balance)*100
 print(f"From {initial_balance}€, final balance is: {last_nonzero:.0f}€, which is {pct_change:.3f}%")
+# %%
+
+# %%
+from backtesting import Strategy
+from backtesting import Backtest
+# %%
+
+class neural_net_prediction(Strategy):
+    scaler = RobustScaler()
+    columns_not_to_predict = [
+    'Open_time', 
+    'Open',
+    'Close', 
+    'Low', 
+    'High', 
+    'Volume']
+    loaded_model = tf.keras.models.load_model("./models/neural_net_model") 
+    file_path = './models/cutoffs.pickle'
+    with open(file_path, 'rb') as handle:
+        cutoffs = pickle.load(handle)
+    cut_predictions = pd.DataFrame()
+    def set_model_prediction(self, row):
+        if row["model_prediction_V1"]:
+            return "buy"
+        elif row["model_prediction_V3"]:
+            return "sell"
+        else:
+            return "hold"
+
+    def init(self):
+        self.klines = add_all_ta_features(klines,
+                                    open = "Open", 
+                                    close = "Close",
+                                    volume = "Volume",
+                                    low = "Low",
+                                    high = "High",
+                                    fillna=True).dropna()
+        self.klines_to_predict = klines.drop(columns=self.columns_not_to_predict)
+
+        self.klines_to_predict = self.scaler.fit_transform(
+            self.klines_to_predict.astype('float32'))
+        self.predictions = self.loaded_model.predict(self.klines_to_predict)
+        for index, cutoff in enumerate(self.cutoffs):  
+                self.cut_predictions[f'model_prediction_V{index+1}']=  list(zip(*self.predictions))[index] > cutoff  
+        for index, row in self.cut_predictions.iterrows():
+            self.result = self.set_model_prediction(row)
+        print(pd.Series(self.result).value_counts())
+    
+    def next(self):
+        if self.result == "buy":
+            self.position.close()
+            self.buy()
+        elif self.result == "sell":
+            self.position.close()
+            self.sell()
+
+# %%
+bt = Backtest(klines, neural_net_prediction, cash=10_000)
+# %%
+stats = bt.run()
 # %%
