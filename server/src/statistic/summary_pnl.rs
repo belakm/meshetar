@@ -50,12 +50,12 @@ impl TableBuilder for DataSummary {
     fn row(&self) -> Row {
         row![
             self.count,
-            format!("{:.3}", self.sum),
-            format!("{:.3}", self.mean),
-            format!("{:.3}", self.dispersion.variance),
-            format!("{:.3}", self.dispersion.std_dev),
-            format!("{:.3}", self.dispersion.range.high),
-            format!("{:.3}", self.dispersion.range.low),
+            format!("{:.8}", self.sum),
+            format!("{:.8}", self.mean),
+            format!("{:.8}", self.dispersion.variance),
+            format!("{:.8}", self.dispersion.std_dev),
+            format!("{:.8}", self.dispersion.range.high),
+            format!("{:.8}", self.dispersion.range.low),
         ]
     }
 }
@@ -96,12 +96,12 @@ impl TableBuilder for PnLReturnSummary {
             wins,
             self.losses.count,
             self.duration.num_days().to_string(),
-            format!("{:.3}", self.trades_per_day),
-            format!("{:.3}", self.total.mean),
-            format!("{:.3}", self.total.dispersion.std_dev),
-            format!("{:.3}", self.losses.mean),
-            format!("{:.3}", self.total.dispersion.range.high),
-            format!("{:.3}", self.total.dispersion.range.low),
+            format!("{:.8}", self.trades_per_day),
+            format!("{:.8}", self.total.mean),
+            format!("{:.8}", self.total.dispersion.std_dev),
+            format!("{:.8}", self.losses.mean),
+            format!("{:.8}", self.total.dispersion.range.high),
+            format!("{:.8}", self.total.dispersion.range.low),
         ]
     }
 }
@@ -228,9 +228,9 @@ impl TableBuilder for ProfitLossSummary {
 
     fn row(&self) -> Row {
         row![
-            format!("{:.3}", self.long_contracts),
-            format!("{:.3}", self.long_pnl),
-            format!("{:.3}", self.long_pnl_per_contract),
+            format!("{:.8}", self.long_contracts),
+            format!("{:.8}", self.long_pnl),
+            format!("{:.8}", self.long_pnl_per_contract),
             // format!("{:.3}", self.short_contracts),
             // format!("{:.3}", self.short_pnl),
             // format!("{:.3}", self.short_pnl_per_contract),

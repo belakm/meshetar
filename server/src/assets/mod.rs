@@ -8,7 +8,10 @@ use self::{asset_ticker::KlineEvent, error::AssetError};
 use crate::{
     database::Database,
     strategy::Signal,
-    utils::{binance_client::BinanceClient, formatting::timestamp_to_dt},
+    utils::{
+        binance_client::BinanceClient,
+        formatting::{dt_to_readable, timestamp_to_dt},
+    },
 };
 use binance_spot_connector_rust::market::klines::KlineInterval;
 use chrono::{DateTime, Duration, Utc};
@@ -230,12 +233,11 @@ pub async fn fetch_candles(
     binance_client: Arc<BinanceClient>,
 ) -> Result<Vec<Candle>, AssetError> {
     let mut start_time: i64 = (Utc::now() - duration).timestamp_millis();
-    info!("Fetching {} history, start: {}", asset, start_time);
     let mut candles = Vec::<Candle>::new();
     loop {
         tokio::select! {
             _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
-                info!("Loading candles from: {:?}", start_time);
+                info!("Loading candles from: {:?}", timestamp_to_dt(start_time));
                 let request = binance_spot_connector_rust::market::klines(&asset.to_string(), KlineInterval::Minutes1)
                     .start_time(start_time as u64)
                     .limit(1000);

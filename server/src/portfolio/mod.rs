@@ -4,7 +4,6 @@ pub mod balance;
 pub mod error;
 pub mod position;
 pub mod risk;
-pub mod routes;
 
 use self::{
     allocator::Allocator,
@@ -43,7 +42,6 @@ pub struct Portfolio {
     allocation_manager: Allocator,
     risk_manager: RiskEvaluator,
     assets: Vec<Asset>,
-    trading_is_live: bool,
     statistic_config: StatisticConfig,
 }
 
@@ -292,7 +290,6 @@ pub struct PortfolioBuilder {
     starting_cash: Option<f64>,
     statistic_config: Option<StatisticConfig>,
     assets: Option<Vec<Asset>>,
-    trading_is_live: Option<bool>,
 }
 
 impl PortfolioBuilder {
@@ -305,7 +302,6 @@ impl PortfolioBuilder {
             starting_cash: None,
             statistic_config: None,
             assets: None,
-            trading_is_live: None,
         }
     }
     pub fn database(self, database: Arc<Mutex<Database>>) -> Self {
@@ -350,13 +346,6 @@ impl PortfolioBuilder {
             ..self
         }
     }
-    pub fn trading_is_live(self, value: bool) -> Self {
-        Self {
-            trading_is_live: Some(value),
-            ..self
-        }
-    }
-
     pub async fn build(self) -> Result<Portfolio, PortfolioError> {
         let portfolio = Portfolio {
             core_id: self
@@ -368,9 +357,6 @@ impl PortfolioBuilder {
             risk_manager: self
                 .risk_manager
                 .ok_or(PortfolioError::BuilderIncomplete("risk_manager"))?,
-            trading_is_live: self
-                .trading_is_live
-                .ok_or(PortfolioError::BuilderIncomplete("trading_is_live"))?,
             assets: self
                 .assets
                 .ok_or(PortfolioError::BuilderIncomplete("assets"))?,

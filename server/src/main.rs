@@ -1,8 +1,14 @@
+const IS_LIVE: bool = false;
+const BACKTEST_LAST_N_CANDLES: usize = 1440;
+const FETCH_N_DAYS_HISTORY: i64 = 0;
+const STARTING_EQUITY: f64 = 0.01;
+const EXCHANGE_FEE: f64 = 0.001;
+const DEFAULT_ASSET: Asset = Asset::ETHBTC;
+
 mod assets;
 mod core;
 mod database;
 mod events;
-mod plotting;
 mod portfolio;
 mod statistic;
 mod strategy;
@@ -35,10 +41,6 @@ use tracing::{error, info};
 use trading::{error::TraderError, execution::Execution, Trader};
 use utils::binance_client::{BinanceClient, BinanceClientError};
 use uuid::Uuid;
-
-const IS_LIVE: bool = false;
-const BACKTEST_LAST_N_CANDLES: usize = 1490;
-const FETCH_N_DAYS_HISTORY: i64 = 0;
 
 pub struct CORS;
 
@@ -132,7 +134,7 @@ async fn run() -> Result<(), MainError> {
     let database: Arc<Mutex<Database>> =
         Arc::new(Mutex::new(Database::new().map_err(MainError::from).await?));
     let statistic_config = StatisticConfig {
-        starting_equity: 1000.0,
+        starting_equity: STARTING_EQUITY,
         trading_days_per_year: 365,
         risk_free_return: 0.0,
         created_at: Utc::now(),
@@ -145,10 +147,9 @@ async fn run() -> Result<(), MainError> {
                 default_order_value: 100.0,
             })
             .risk_manager(RiskEvaluator {})
-            .starting_cash(1000.0)
-            .assets(vec![Asset::BTCUSDT])
+            .starting_cash(STARTING_EQUITY)
+            .assets(vec![DEFAULT_ASSET])
             .statistic_config(statistic_config.clone())
-            .trading_is_live(IS_LIVE)
             .build()
             .await?,
     ));
@@ -156,23 +157,23 @@ async fn run() -> Result<(), MainError> {
     let mut traders = Vec::new();
     let (command_transmitter, command_receiver) = mpsc::channel::<Command>(20);
     let (trader_command_transmitter, trader_command_receiver) = mpsc::channel::<Command>(20);
-    let command_transmitters = HashMap::from([(Asset::BTCUSDT, trader_command_transmitter)]);
+    let command_transmitters = HashMap::from([(DEFAULT_ASSET, trader_command_transmitter)]);
     traders.push(
         Trader::builder()
             .core_id(core_id)
-            .asset(Asset::BTCUSDT)
+            .asset(DEFAULT_ASSET)
             .trading_is_live(IS_LIVE)
             .command_reciever(trader_command_receiver)
             .event_transmitter(event_transmitter)
             .portfolio(Arc::clone(&portfolio))
             .market_feed(MarketFeed::new(
-                Asset::BTCUSDT,
+                DEFAULT_ASSET,
                 IS_LIVE,
                 database.clone(),
                 BACKTEST_LAST_N_CANDLES,
             ))
-            .strategy(Strategy::new(Asset::BTCUSDT))
-            .execution(Execution::new())
+            .strategy(Strategy::new(DEFAULT_ASSET))
+            .execution(Execution::new(EXCHANGE_FEE))
             .build()?,
     );
 
@@ -198,8 +199,6 @@ async fn run() -> Result<(), MainError> {
     if let Err(listener_error) = listener_result {
         error!("{}", listener_error);
     }
-
-    //let _3 = tokio::spawn(async { loop {} }).await;
 
     // rocket::build()
     //     .attach(CORS)

@@ -14,7 +14,7 @@ while not os.path.basename(os.getcwd()) == 'server':
 # while not os.path.basename(os.getcwd()) == 'meshetar':
 #    os.chdir('..')  # Move up one directory
 
-def run(candle_time=None):
+def run(candle_time=None, pair="BTCUSDT"):
     # Comment out the warning silencers below when developing:
     warnings.simplefilter(action='ignore', category=FutureWarning)
     warnings.simplefilter("ignore", category=RuntimeWarning)
@@ -25,6 +25,7 @@ def run(candle_time=None):
     conn = sqlite3.connect('./database.sqlite')
     # cursor = sqliteConnection.cursor()
     time_query = f"AND open_time <= \"{candle_time}\"" if candle_time else ""
+
     query = f"""
     SELECT open_time,
     open,
@@ -33,7 +34,7 @@ def run(candle_time=None):
     close, 
     volume
     FROM candles
-    WHERE asset = 'BTCUSDT'
+    WHERE asset = '{pair}'
     AND volume > 0
     {time_query}
     ORDER BY open_time DESC

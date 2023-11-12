@@ -116,7 +116,7 @@ impl Strategy {
         buffer_n_of_candles: usize,
     ) -> Result<Option<Vec<Option<Signal>>>, StrategyError> {
         let pyscript = include_str!("../../models/backtest.py");
-        let args = (open_time.to_rfc3339(),);
+        let args = (open_time.to_rfc3339(), asset.to_string());
         let model_output = run_backtest(pyscript, args)?;
         let candles_that_were_analyzed = remove_vec_items_from_start(candles, 0);
 
@@ -181,7 +181,7 @@ fn run_candle(script: &str, args: (String,)) -> PyResult<String> {
     Ok(result?)
 }
 
-fn run_backtest(script: &str, args: (String,)) -> PyResult<Vec<(String, DateTime<Utc>)>> {
+fn run_backtest(script: &str, args: (String, String)) -> PyResult<Vec<(String, DateTime<Utc>)>> {
     let result: PyResult<Vec<_>> = Python::with_gil(|py| {
         let activators = PyModule::from_code(py, script, "activators.py", "activators")?;
         let signals: Vec<(String, String)> =

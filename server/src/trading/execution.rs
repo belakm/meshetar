@@ -7,7 +7,9 @@ use crate::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-pub struct Execution {}
+pub struct Execution {
+    exchange_fee: f64,
+}
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug, Default, Deserialize, Serialize)]
 pub struct Fees {
@@ -16,8 +18,8 @@ pub struct Fees {
 }
 
 impl Fees {
-    pub fn calculate_total_fees(&self) -> f64 {
-        self.exchange + self.slippage
+    pub fn calculate_total_fees(&self, gross: f64) -> f64 {
+        (self.exchange * gross) + self.slippage
     }
 }
 
@@ -25,8 +27,8 @@ impl Fees {
 pub type FeeAmount = f64;
 
 impl Execution {
-    pub fn new() -> Self {
-        Execution {}
+    pub fn new(exchange_fee: f64) -> Self {
+        Execution { exchange_fee }
     }
     pub fn generate_fill(
         &self,
@@ -34,18 +36,19 @@ impl Execution {
         live_time: bool,
     ) -> Result<FillEvent, TraderError> {
         let fill_time = if live_time { Utc::now() } else { order.time };
-        Ok(FillEvent {
-            time: fill_time,
-            asset: order.asset.clone(),
-            market_meta: order.market_meta,
-            decision: order.decision,
-            quantity: order.quantity,
-            fill_value_gross: order.quantity.abs() * order.market_meta.close,
-            fees: Fees {
-                exchange: 0.0,
+        let fill_event = FillEvent::builder()
+            .time(fill_time)
+            .asset(order.asset.clone())
+            .market_meta(order.market_meta)
+            .decision(order.decision)
+            .quantity(order.quantity)
+            .fill_value_gross(order.quantity.abs() * order.market_meta.close)
+            .fees(Fees {
+                exchange: self.exchange_fee,
                 slippage: 0.0,
-            },
-        })
+            })
+            .build()?;
+        Ok(fill_event)
     }
 }
 
@@ -61,8 +64,6 @@ pub struct FillEvent {
 }
 
 impl FillEvent {
-    pub const EVENT_TYPE: &'static str = "Fill";
-
     /// Returns a [`FillEventBuilder`] instance.
     pub fn builder() -> FillEventBuilder {
         FillEventBuilder::new()
@@ -123,6 +124,13 @@ impl FillEventBuilder {
     pub fn fees(self, value: Fees) -> Self {
         Self {
             fees: Some(value),
+            ..self
+        }
+    }
+
+    pub fn market_meta(self, value: MarketMeta) -> Self {
+        Self {
+            market_meta: Some(value),
             ..self
         }
     }

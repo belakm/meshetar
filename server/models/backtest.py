@@ -10,7 +10,7 @@ import os
 while not os.path.basename(os.getcwd()) == 'server':
     os.chdir('..')  # Move up one directory
 
-def backtest(candle_time=None):
+def backtest(candle_time=None, pair="BTCUSDT"):
     warnings.simplefilter(action='ignore', category=FutureWarning)
     warnings.simplefilter("ignore", category=RuntimeWarning)
 
@@ -32,10 +32,10 @@ def backtest(candle_time=None):
     close, 
     volume
     FROM candles
-    WHERE asset = 'BTCUSDT'
+    WHERE asset = '{pair}'
     {time_query}
     ORDER BY open_time DESC
-    LIMIT 1440;"""
+    LIMIT 8640;"""
 
     klines = pd.read_sql_query(query, conn)
     # Make predictions using the loaded model

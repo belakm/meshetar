@@ -1,18 +1,12 @@
-use std::sync::Arc;
-
 use crate::utils::load_config::{read_config, Config};
 use binance_spot_connector_rust::{http::Credentials, hyper::BinanceHttpClient};
 use hyper::client::HttpConnector;
 use hyper_tls::HttpsConnector;
 use thiserror::Error;
-use tokio::sync::OnceCell;
 
 use super::load_config::ConfigError;
 
 pub const BINANCE_WSS_BASE_URL: &str = "wss://stream.binance.com:9443/ws";
-
-pub static BINANCE_CLIENT: OnceCell<BinanceHttpClient<HttpsConnector<HttpConnector>>> =
-    OnceCell::const_new();
 
 #[derive(Clone)]
 pub struct BinanceClient {
@@ -33,7 +27,10 @@ impl BinanceClient {
             config.binance_api_secret.to_owned(),
         );
         let client =
-            BinanceHttpClient::with_url("https://testnet.binance.vision").credentials(credentials);
+            // Testnet: 
+            // BinanceHttpClient::with_url("https://testnet.binance.vision").credentials(credentials);
+            // Realnet: 
+            BinanceHttpClient::with_url("https://api.binance.com").credentials(credentials);
         Ok(BinanceClient { client })
     }
 }
