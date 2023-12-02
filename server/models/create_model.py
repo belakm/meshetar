@@ -36,7 +36,7 @@ query = """SELECT open_time,
                  close, 
                  volume
           FROM candles 
-          WHERE asset = 'ETHBTC';"""
+          WHERE asset = 'BTCUSDT'"""
 
 # %%
 klines = pd.read_sql_query(query, conn)
@@ -172,11 +172,16 @@ for class_index in range(len(label_encoder.classes_)):
 
     y_train[f'model_prediction_V{class_index+1}'] = list(zip(*train_proba))[class_index] > optimal_cutoff
     y_test[f'model_prediction_V{class_index+1}'] = list(zip(*test_proba))[class_index] > optimal_cutoff
-
+ 
+ 
 # %%
+cutoffs[0] = cutoffs[0] + 0.02
+cutoffs[2] = cutoffs[2] + 0.02
+
 with open('./models/cutoffs.pickle', 'wb') as handle:
     pickle.dump(cutoffs, handle, protocol=-1)
-
+print(test_proba)
+print(cutoffs)
 # %%
 def set_model_prediction(row):
     if row["model_prediction_V1"]:
@@ -244,16 +249,16 @@ back_test['position'] = back_test['position'].shift(1)
 # Create an initial balance (starting balance)
 initial_balance = 1000
 back_test.at[0, 'balance'] = initial_balance
-back_test
+print(back_test)
 # %%
 current_stake = 0
 current_balance = initial_balance
 asset_quantity = 0
 
+
+
 for index, row in back_test.iterrows():
-
     if index == 0: print(f"first candle: {row['open_time']}")
-
     if row['position'] == 'buy' and current_balance > 0:
         asset_quantity = current_balance / row['close']  # Buy as much as possible
         current_balance = 0
@@ -264,9 +269,8 @@ for index, row in back_test.iterrows():
         print(f"sell at {row.open_time}")
     back_test.at[index, 'balance'] = current_balance + (asset_quantity * row['close'])
 
-# Final balance accounting for any unsold assets
+# # Final balance accounting for any unsold assets
 final_balance = current_balance + (asset_quantity * back_test['close'].iloc[-1])
-
 print(f"Final balance: {final_balance:.2f}")
 
 # for index, row in back_test.iterrows():
@@ -276,35 +280,35 @@ print(f"Final balance: {final_balance:.2f}")
 #         back_test.at[index, 'balance'] = 0
 #         continue
 #     elif row['position'] == 'buy' and current_balance != 0:
-#         print(f"buy at {row.open_time}")
+#         print(f"buy at {row.open_time} price {row.close}")
 #         back_test.at[index, 'balance'] = 0
 #         current_stake = current_balance
 #         current_balance = 0
-#         close_price_at_buy = back_test.at[index - 1, 'close']
+#         close_price_at_buy = back_test.at[index, 'close']
 #     elif row['position'] == 'sell' and current_stake == 0:
 #         back_test.at[index, 'balance'] = current_balance
 #         continue
 #     elif row['position'] == 'sell' and current_stake != 0:
 #         if index + 1 < len(back_test):
-#             print(f"sell at {row.open_time}")
+#             print(f"sell at {row.open_time} price {row.close}")
 #             current_stake = row['close']-close_price_at_buy + current_stake
 #             back_test.at[index, 'balance'] = current_stake
 #             current_balance = current_stake
 #             current_stake = 0
-
-last_nonzero = back_test[back_test['balance']!= 0].iloc[-1]['balance']
-last_nonzero
-
-# %%
-buy_and_sell_scenario = back_test['close'].iloc[-1] - back_test['close'].iloc[0]
-print(f"If we would buy and sell after complete backtest period, change is {buy_and_sell_scenario:.1f}€")
-
-# %%
-print(f"""Starting close price: {back_test['close'].iloc[0]:.1f}€,
-    Ending close price: {back_test['close'].iloc[-1]:.1f}€""")
-# %%
-last_nonzero = back_test[back_test['balance']!= 0].iloc[-1]['balance']
-balance_difference = last_nonzero - back_test['balance'].iloc[0] 
-pct_change = (last_nonzero/initial_balance)*100
-print(f"From {initial_balance}€, final balance is: {last_nonzero:.0f}€, which is {pct_change:.3f}%")
-# %%
+#
+# last_nonzero = back_test[back_test['balance']!= 0].iloc[-1]['balance']
+# last_nonzero
+#
+# # %%
+# buy_and_sell_scenario = back_test['close'].iloc[-1] - back_test['close'].iloc[0]
+# print(f"If we would buy and sell after complete backtest period, change is {buy_and_sell_scenario:.1f}€")
+#
+# # %%
+# print(f"""Starting close price: {back_test['close'].iloc[0]:.1f}€,
+#     Ending close price: {back_test['close'].iloc[-1]:.1f}€""")
+# # %%
+# last_nonzero = back_test[back_test['balance']!= 0].iloc[-1]['balance']
+# balance_difference = last_nonzero - back_test['balance'].iloc[0] 
+# pct_change = (last_nonzero/initial_balance)*100
+# print(f"From {initial_balance}€, final balance is: {last_nonzero:.0f}€, which is {pct_change:.3f}%")
+# # %%
