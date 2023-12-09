@@ -1,9 +1,9 @@
 const IS_LIVE: bool = false;
 const BACKTEST_LAST_N_CANDLES: usize = 1440;
-const FETCH_N_DAYS_HISTORY: i64 = 0;
-const STARTING_EQUITY: f64 = 0.01;
-const EXCHANGE_FEE: f64 = 0.001;
-const DEFAULT_ASSET: Asset = Asset::ETHBTC;
+const FETCH_N_DAYS_HISTORY: i64 = 5;
+const STARTING_EQUITY: f64 = 1000.0;
+const EXCHANGE_FEE: f64 = 0.0;
+const DEFAULT_ASSET: Asset = Asset::BTCUSDT;
 
 mod assets;
 mod core;
@@ -22,14 +22,16 @@ use database::{error::DatabaseError, Database};
 use env_logger::Builder;
 use events::{core_events_listener, EventTx};
 use log::LevelFilter;
-use portfolio::{allocator::Allocator, error::PortfolioError, risk::RiskEvaluator, Portfolio};
+use portfolio::{
+  allocator::Allocator, error::PortfolioError, risk::RiskEvaluator, Portfolio,
+};
 use rocket::{
-    catch,
-    fairing::{Fairing, Info, Kind},
-    futures::TryFutureExt,
-    http::Header,
-    http::Status,
-    Error as RocketError, Request, Response,
+  catch,
+  fairing::{Fairing, Info, Kind},
+  futures::TryFutureExt,
+  http::Header,
+  http::Status,
+  Error as RocketError, Request, Response,
 };
 use statistic::StatisticConfig;
 use std::{collections::HashMap, sync::Arc};
@@ -46,39 +48,40 @@ pub struct CORS;
 
 #[derive(Error, Debug)]
 enum MainError {
-    #[error("Portfolio error: {0}")]
-    Portfolio(#[from] PortfolioError),
-    #[error("Database error: {0}")]
-    Database(#[from] DatabaseError),
-    #[error("Core error: {0}")]
-    Core(#[from] CoreError),
-    #[error("Trader error: {0}")]
-    Trader(#[from] TraderError),
-    #[error("Binance client error: {0}")]
-    BinanceClient(#[from] BinanceClientError),
-    #[error("Assets: {0}")]
-    Asset(#[from] AssetError),
-    #[error("Rocket server error: {0}")]
-    Rocket(#[from] RocketError),
+  #[error("Portfolio error: {0}")]
+  Portfolio(#[from] PortfolioError),
+  #[error("Database error: {0}")]
+  Database(#[from] DatabaseError),
+  #[error("Core error: {0}")]
+  Core(#[from] CoreError),
+  #[error("Trader error: {0}")]
+  Trader(#[from] TraderError),
+  #[error("Binance client error: {0}")]
+  BinanceClient(#[from] BinanceClientError),
+  #[error("Assets: {0}")]
+  Asset(#[from] AssetError),
+  #[error("Rocket server error: {0}")]
+  Rocket(#[from] RocketError),
 }
 
 #[rocket::async_trait]
 impl Fairing for CORS {
-    fn info(&self) -> Info {
-        Info {
-            name: "Cross-Origin-Resource-Sharing Fairing",
-            kind: Kind::Response,
-        }
-    }
-    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
-        response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
-        response.set_header(Header::new(
-            "Access-Control-Allow-Methods",
-            "POST, PATCH, PUT, DELETE, HEAD, OPTIONS, GET",
-        ));
-        response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
-        response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
-    }
+  fn info(&self) -> Info {
+    Info { name: "Cross-Origin-Resource-Sharing Fairing", kind: Kind::Response }
+  }
+  async fn on_response<'r>(
+    &self,
+    _request: &'r Request<'_>,
+    response: &mut Response<'r>,
+  ) {
+    response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
+    response.set_header(Header::new(
+      "Access-Control-Allow-Methods",
+      "POST, PATCH, PUT, DELETE, HEAD, OPTIONS, GET",
+    ));
+    response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
+    response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
+  }
 }
 
 // Rocket server
@@ -89,141 +92,141 @@ extern crate rocket;
 
 #[catch(500)]
 fn internal_error() -> &'static str {
-    "Error 500; something is not clicking right."
+  "Error 500; something is not clicking right."
 }
 
 #[catch(404)]
 fn not_found() -> &'static str {
-    "Error 404; nothing here fren."
+  "Error 404; nothing here fren."
 }
 
 #[catch(default)]
 fn default(status: Status, req: &Request) -> String {
-    format!("{} ({})", status, req.uri())
+  format!("{} ({})", status, req.uri())
 }
 
 /// Catches all OPTION requests in order to get the CORS related Fairing triggered.
 /// https://stackoverflow.com/a/72702246
 #[options("/<_..>")]
 fn all_options() {
-    /* Intentionally left empty */
+  /* Intentionally left empty */
 }
 
 pub struct TaskControl {
-    sender: watch::Sender<bool>,
-    receiver: watch::Receiver<bool>,
+  sender: watch::Sender<bool>,
+  receiver: watch::Receiver<bool>,
 }
 
 fn main() {
-    match run() {
-        Ok(_) => info!("Leaving Meshetar. See you soon! :)"),
-        Err(e) => error!("Whoops, error: {}", e),
-    }
+  match run() {
+    Ok(_) => info!("Leaving Meshetar. See you soon! :)"),
+    Err(e) => error!("Whoops, error: {}", e),
+  }
 }
 
 #[rocket::main]
 async fn run() -> Result<(), MainError> {
-    // Point PYTHONHOME to the virtual environment directory
-    let mut builder = Builder::new();
-    builder.filter(None, LevelFilter::Info); // a default for other libs
-    builder.filter(Some("sqlx"), LevelFilter::Warn);
-    builder.init();
-    let core_id = Uuid::new_v4();
-    let (event_transmitter, event_receiver) = mpsc::unbounded_channel();
-    let event_transmitter = EventTx::new(event_transmitter);
-    let database: Arc<Mutex<Database>> =
-        Arc::new(Mutex::new(Database::new().map_err(MainError::from).await?));
-    let statistic_config = StatisticConfig {
-        starting_equity: STARTING_EQUITY,
-        trading_days_per_year: 365,
-        risk_free_return: 0.0,
-        created_at: Utc::now(),
-    };
-    let portfolio: Arc<Mutex<Portfolio>> = Arc::new(Mutex::new(
-        Portfolio::builder()
-            .database(database.clone())
-            .core_id(core_id.clone())
-            .allocation_manager(Allocator {
-                default_order_value: 100.0,
-            })
-            .risk_manager(RiskEvaluator {})
-            .starting_cash(STARTING_EQUITY)
-            .assets(vec![DEFAULT_ASSET])
-            .statistic_config(statistic_config.clone())
-            .build()
-            .await?,
-    ));
+  // Point PYTHONHOME to the virtual environment directory
+  let mut builder = Builder::new();
+  builder.filter(None, LevelFilter::Info); // a default for other libs
+  builder.filter(Some("sqlx"), LevelFilter::Warn);
+  builder.init();
+  let core_id = Uuid::new_v4();
+  let (event_transmitter, event_receiver) = mpsc::unbounded_channel();
+  let event_transmitter = EventTx::new(event_transmitter);
+  let database: Arc<Mutex<Database>> =
+    Arc::new(Mutex::new(Database::new().map_err(MainError::from).await?));
+  let statistic_config = StatisticConfig {
+    starting_equity: STARTING_EQUITY,
+    trading_days_per_year: 365,
+    risk_free_return: 0.0,
+    created_at: Utc::now(),
+  };
+  let portfolio: Arc<Mutex<Portfolio>> = Arc::new(Mutex::new(
+    Portfolio::builder()
+      .database(database.clone())
+      .core_id(core_id.clone())
+      .allocation_manager(Allocator { default_order_value: 100.0 })
+      .risk_manager(RiskEvaluator {})
+      .starting_cash(STARTING_EQUITY)
+      .assets(vec![DEFAULT_ASSET])
+      .statistic_config(statistic_config.clone())
+      .build()
+      .await?,
+  ));
 
-    let mut traders = Vec::new();
-    let (command_transmitter, command_receiver) = mpsc::channel::<Command>(20);
-    let (trader_command_transmitter, trader_command_receiver) = mpsc::channel::<Command>(20);
-    let command_transmitters = HashMap::from([(DEFAULT_ASSET, trader_command_transmitter)]);
-    traders.push(
-        Trader::builder()
-            .core_id(core_id)
-            .asset(DEFAULT_ASSET)
-            .trading_is_live(IS_LIVE)
-            .command_reciever(trader_command_receiver)
-            .event_transmitter(event_transmitter)
-            .portfolio(Arc::clone(&portfolio))
-            .market_feed(MarketFeed::new(
-                DEFAULT_ASSET,
-                IS_LIVE,
-                database.clone(),
-                BACKTEST_LAST_N_CANDLES,
-            ))
-            .strategy(Strategy::new(DEFAULT_ASSET))
-            .execution(Execution::new(EXCHANGE_FEE))
-            .build()?,
-    );
+  let mut traders = Vec::new();
+  let (command_transmitter, command_receiver) = mpsc::channel::<Command>(20);
+  let (trader_command_transmitter, trader_command_receiver) =
+    mpsc::channel::<Command>(20);
+  let command_transmitters = HashMap::from([(DEFAULT_ASSET, trader_command_transmitter)]);
+  traders.push(
+    Trader::builder()
+      .core_id(core_id)
+      .asset(DEFAULT_ASSET)
+      .trading_is_live(IS_LIVE)
+      .command_reciever(trader_command_receiver)
+      .event_transmitter(event_transmitter)
+      .portfolio(Arc::clone(&portfolio))
+      .market_feed(MarketFeed::new(
+        DEFAULT_ASSET,
+        IS_LIVE,
+        database.clone(),
+        BACKTEST_LAST_N_CANDLES,
+      ))
+      .strategy(Strategy::new(DEFAULT_ASSET))
+      .execution(Execution::new(EXCHANGE_FEE))
+      .build()?,
+  );
 
-    let core = Core::builder()
-        .id(core_id)
-        .binance_client(BinanceClient::new().map_err(MainError::from).await?)
-        .portfolio(portfolio)
-        .command_reciever(command_receiver)
-        .command_transmitters(command_transmitters)
-        .traders(traders)
-        .database(database.clone())
-        .statistics_config(statistic_config)
-        .n_days_history_fetch(FETCH_N_DAYS_HISTORY)
-        .build()?;
+  let core = Core::builder()
+    .id(core_id)
+    .binance_client(BinanceClient::new().map_err(MainError::from).await?)
+    .portfolio(portfolio)
+    .command_reciever(command_receiver)
+    .command_transmitters(command_transmitters)
+    .traders(traders)
+    .database(database.clone())
+    .statistics_config(statistic_config)
+    .n_days_history_fetch(FETCH_N_DAYS_HISTORY)
+    .build()?;
 
-    let listener_task = tokio::spawn(core_events_listener(event_receiver, database, IS_LIVE));
-    // let _ = tokio::time::timeout(Duration::from_secs(20), core.run());
-    let core_task = tokio::spawn(async move { core.run().await });
-    let (core_result, listener_result) = tokio::join!(core_task, listener_task);
-    if let Err(core_error) = core_result {
-        error!("{}", core_error);
-    }
-    if let Err(listener_error) = listener_result {
-        error!("{}", listener_error);
-    }
+  let listener_task =
+    tokio::spawn(core_events_listener(event_receiver, database, IS_LIVE));
+  // let _ = tokio::time::timeout(Duration::from_secs(20), core.run());
+  let core_task = tokio::spawn(async move { core.run().await });
+  let (core_result, listener_result) = tokio::join!(core_task, listener_task);
+  if let Err(core_error) = core_result {
+    error!("{}", core_error);
+  }
+  if let Err(listener_error) = listener_result {
+    error!("{}", listener_error);
+  }
 
-    // rocket::build()
-    //     .attach(CORS)
-    //     .mount(
-    //         "/",
-    //         routes![
-    //             all_options, // needed for Rocket to serve to browsers
-    //                          // create_new_model,
-    //                          // balance_sheet,
-    //                          // plot_chart,
-    //                          // meshetar_status,
-    //                          // interval_put,
-    //                          // stop_all_operations,
-    //                          // fetch_history,
-    //                          // clear_history,
-    //                          // last_kline_time,
-    //                          // run,
-    //                          // plot_chart,
-    //         ],
-    //     )
-    //     .mount("/", FileServer::new("static", Options::None).rank(1))
-    //     .register("/", catchers![internal_error, not_found, default])
-    //     .launch()
-    //     .map_err(MainError::from)
-    //     .await?;
+  // rocket::build()
+  //     .attach(CORS)
+  //     .mount(
+  //         "/",
+  //         routes![
+  //             all_options, // needed for Rocket to serve to browsers
+  //                          // create_new_model,
+  //                          // balance_sheet,
+  //                          // plot_chart,
+  //                          // meshetar_status,
+  //                          // interval_put,
+  //                          // stop_all_operations,
+  //                          // fetch_history,
+  //                          // clear_history,
+  //                          // last_kline_time,
+  //                          // run,
+  //                          // plot_chart,
+  //         ],
+  //     )
+  //     .mount("/", FileServer::new("static", Options::None).rank(1))
+  //     .register("/", catchers![internal_error, not_found, default])
+  //     .launch()
+  //     .map_err(MainError::from)
+  //     .await?;
 
-    Ok(())
+  Ok(())
 }

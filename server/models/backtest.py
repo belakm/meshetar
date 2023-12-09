@@ -34,8 +34,8 @@ def backtest(candle_time=None, pair="BTCUSDT"):
     FROM candles
     WHERE asset = '{pair}'
     {time_query}
-    ORDER BY open_time DESC
-    LIMIT 8640;"""
+    ORDER BY open_time ASC 
+    LIMIT 1440;"""
 
     klines = pd.read_sql_query(query, conn)
     # Make predictions using the loaded model
@@ -73,9 +73,11 @@ def backtest(candle_time=None, pair="BTCUSDT"):
     scaler = RobustScaler()
     klines_to_predict = scaler.fit_transform(klines_to_predict.astype('float32'))
     predictions = loaded_model.predict(klines_to_predict)
+    print(klines)
     file_path = './models/cutoffs.pickle'
     with open(file_path, 'rb') as handle:
         cutoffs = pickle.load(handle)
+    print(cutoffs)
     cut_predictions = pd.DataFrame()
     for index, cutoff in enumerate(cutoffs):  
         cut_predictions[f'model_prediction_V{index+1}']=  list(zip(*predictions))[index] > cutoff  
@@ -93,37 +95,39 @@ def backtest(candle_time=None, pair="BTCUSDT"):
     cut_predictions['close'] = close_data.reset_index(drop=True)
     
     # Return combined data
-    # combined_predictions = list(zip(cut_predictions['open_time'], cut_predictions['model_prediction'], cut_predictions['close']))
-    combined_predictions = list(zip(cut_predictions['open_time'], cut_predictions['model_prediction'])) 
+    combined_predictions = list(zip(cut_predictions['open_time'], cut_predictions['model_prediction'], cut_predictions['close']))
+    #combined_predictions = list(zip(cut_predictions['open_time'], cut_predictions['model_prediction'])) 
 
     # Revert order
-    return combined_predictions[::-1]
+    return combined_predictions
 
-# predictions = backtest("2023-11-08T11:22:00+00:00")
-#
-# initial_balance = 1000
-# current_balance = initial_balance
-# current_stake = 0
-# close_price_at_buy = 0
-#
-# for time, action, close in predictions:
-#     if action == 'buy' and current_stake == 0:
-#         print(f"Buy at {time}")
-#         # Spend the entire current balance to buy at the close price
-#         current_stake = current_balance / close
-#         current_balance = 0
-#         close_price_at_buy = close 
-#     elif action == 'sell' and current_stake != 0:
-#         print(f"Sell at {time}")
-#         # Sell all the stake at the current close price
-#         current_balance = current_stake * close
-#         current_stake = 0
-#
-# # If the final action was a buy, sell at the last price to realize the profit/loss
-# if current_stake != 0:
-#     current_balance = current_stake * predictions[-1][2]
-#     current_stake = 0
-#
-# final_balance = current_balance
-# print(f"Initial balance: {initial_balance}")
-# print(f"Final balance: {final_balance}")
+predictions = backtest("2023-12-01T12:50:00+00:00")
+
+initial_balance = 1000
+current_balance = initial_balance
+current_stake = 0
+close_price_at_buy = 0
+
+for time, action, close in predictions:
+    if action == 'buy' and current_stake == 0:
+        print(f"Buy at {time} price {close}")
+        # Spend the entire current balance to buy at the close price
+        current_stake = current_balance / close
+        current_balance = 0
+        close_price_at_buy = close
+        print(current_stake * close)
+    elif action == 'sell' and current_stake != 0:
+        print(f"Sell at {time} price {close}")
+        # Sell all the stake at the current close price
+        current_balance = current_stake * close
+        print(current_balance)
+        current_stake = 0
+
+# If the final action was a buy, sell at the last price to realize the profit/loss
+if current_stake != 0:
+    current_balance = current_stake * predictions[-1][2]
+    current_stake = 0
+
+final_balance = current_balance
+print(f"Initial balance: {initial_balance}")
+print(f"Final balance: {final_balance}")
