@@ -19,3 +19,4 @@ server/historical_trading_signals_model_was_trained
 venv_meshetar/*
 server/models/database.sqlite
 server/models/cutoffs.pickle
+models/*

@@ -34,9 +34,9 @@ def backtest(candle_time=None, pair="BTCUSDT"):
     FROM candles
     WHERE asset = '{pair}'
     {time_query}
-    ORDER BY open_time ASC 
+    ORDER BY open_time ASC  
     LIMIT 1440;"""
-
+    # ASC gives us a problem, because we want to backtest the last klines in the test set and not the training set. ASC gives us the first ones.
     klines = pd.read_sql_query(query, conn)
     # Make predictions using the loaded model
     klines = add_all_ta_features(klines,
@@ -101,7 +101,7 @@ def backtest(candle_time=None, pair="BTCUSDT"):
     # Revert order
     return combined_predictions
 
-predictions = backtest("2023-12-01T12:50:00+00:00")
+predictions = backtest("2023-12-26T12:50:00+00:00")
 
 initial_balance = 1000
 current_balance = initial_balance
