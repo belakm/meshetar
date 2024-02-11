@@ -20,3 +20,4 @@ venv_meshetar/*
 server/models/database.sqlite
 server/models/cutoffs.pickle
 models/*
+.venv/*
