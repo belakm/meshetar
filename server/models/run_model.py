@@ -17,7 +17,7 @@ def run(candle_time=None, pair="BTCUSDT"):
     warnings.simplefilter("ignore", category=RuntimeWarning)
     warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
     # Load the saved model
-    loaded_model = tf.keras.models.load_model("./models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
+    loaded_model = tf.keras.models.load_model("./models/neural_net_model/model.keras")  # Specify the path to your saved model directory or .h5 file
     
     conn = sqlite3.connect('./database.sqlite')
     # cursor = sqliteConnection.cursor()

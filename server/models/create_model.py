@@ -191,6 +191,7 @@ def set_model_prediction(row):
     else:
         return "hold"
 y_train['model_prediction'] = y_train.apply(set_model_prediction, axis=1).astype(str)
+
 y_test['model_prediction'] = y_test.apply(set_model_prediction, axis=1).astype(str)
 
 # %%
@@ -211,7 +212,7 @@ conf_matrix = confusion_matrix(y_test['signal'], y_test['model_prediction'], lab
 # plt.show()
 
 # %%
-model.save("./models/neural_net_model")
+model.save("./models/neural_net_model/model.keras")
 #
 # %%
 test_set_close = klines.loc[y_test.index, 'close']

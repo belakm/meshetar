@@ -17,7 +17,7 @@ def backtest(candle_time=None, pair="BTCUSDT"):
     #%%
 
     # Load the saved model
-    loaded_model = tf.keras.models.load_model("./models/neural_net_model")  # Specify the path to your saved model directory or .h5 file
+    loaded_model = tf.keras.models.load_model("./models/neural_net_model/model.keras")  # Specify the path to your saved model directory or .h5 file
 
     #%%
     conn = sqlite3.connect('./database.sqlite')
@@ -95,39 +95,39 @@ def backtest(candle_time=None, pair="BTCUSDT"):
     cut_predictions['close'] = close_data.reset_index(drop=True)
     
     # Return combined data
-    combined_predictions = list(zip(cut_predictions['open_time'], cut_predictions['model_prediction'], cut_predictions['close']))
-    #combined_predictions = list(zip(cut_predictions['open_time'], cut_predictions['model_prediction'])) 
+    # combined_predictions = list(zip(cut_predictions['open_time'], cut_predictions['model_prediction'], cut_predictions['close']))
+    combined_predictions = list(zip(cut_predictions['open_time'], cut_predictions['model_prediction'])) 
 
     # Revert order
     return combined_predictions
 
-predictions = backtest("2023-12-01T12:50:00+00:00")
-
-initial_balance = 1000
-current_balance = initial_balance
-current_stake = 0
-close_price_at_buy = 0
-
-for time, action, close in predictions:
-    if action == 'buy' and current_stake == 0:
-        print(f"Buy at {time} price {close}")
-        # Spend the entire current balance to buy at the close price
-        current_stake = current_balance / close
-        current_balance = 0
-        close_price_at_buy = close
-        print(current_stake * close)
-    elif action == 'sell' and current_stake != 0:
-        print(f"Sell at {time} price {close}")
-        # Sell all the stake at the current close price
-        current_balance = current_stake * close
-        print(current_balance)
-        current_stake = 0
-
-# If the final action was a buy, sell at the last price to realize the profit/loss
-if current_stake != 0:
-    current_balance = current_stake * predictions[-1][2]
-    current_stake = 0
-
-final_balance = current_balance
-print(f"Initial balance: {initial_balance}")
-print(f"Final balance: {final_balance}")
+# predictions = backtest("2023-12-01T12:50:00+00:00")
+#
+# initial_balance = 1000
+# current_balance = initial_balance
+# current_stake = 0
+# close_price_at_buy = 0
+#
+# for time, action, close in predictions:
+#     if action == 'buy' and current_stake == 0:
+#         print(f"Buy at {time} price {close}")
+#         # Spend the entire current balance to buy at the close price
+#         current_stake = current_balance / close
+#         current_balance = 0
+#         close_price_at_buy = close
+#         print(current_stake * close)
+#     elif action == 'sell' and current_stake != 0:
+#         print(f"Sell at {time} price {close}")
+#         # Sell all the stake at the current close price
+#         current_balance = current_stake * close
+#         print(current_balance)
+#         current_stake = 0
+#
+# # If the final action was a buy, sell at the last price to realize the profit/loss
+# if current_stake != 0:
+#     current_balance = current_stake * predictions[-1][2]
+#     current_stake = 0
+#
+# final_balance = current_balance
+# print(f"Initial balance: {initial_balance}")
+# print(f"Final balance: {final_balance}")
